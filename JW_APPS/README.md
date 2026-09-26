@@ -1,45 +1,19 @@
-# JW_APPS — Jabberwocky Asynchronous Print Protection Suite
+## 🛠️ Installation Instructions
 
-JW_APPS is an advanced extension suite providing low-level mechanical health diagnostics, predictive load filtering, and protective software clutch overrides for high-performance toolhead drive systems.
-
----
-
-## 🧬 Sub-System Architecture
-
-The suite uses two asynchronous execution layers running inside host memory:
-*   **CANE (Contextual Asynchronous Network Engine):** Samples raw driver registers over UART in the background every 100ms using an in-memory cache to prevent console bloat and SD card degradation.
-*   **ASC (Asynchronous Software Clutch):** A predictive safety matrix that cross-references telemetry in real time and executes adaptive velocity mitigation overrides before physical damage occurs during persistent overloads.
-
----
-
-## 📊 Technical Characterization Profiles
-
-Optimized for high-speed compound setups (such as LDO steppers and dual-drive gear configurations):
-*   **Disengaged Guidler (Empty Path):** `SG_RESULT = 136` | `PWM_SCALE_SUM = 27`
-*   **Engaged Guidler (Empty Path):** `SG_RESULT = 120` | `PWM_SCALE_SUM = 27`
-*   **Healthy Polymer Melt Purge:** `SG_RESULT = 136 to 152` | `PWM_SCALE_SUM = 26 to 27`
-*   **Sustained Mechanical Jam:** `SG_RESULT = 104` | `PWM_SCALE_SUM = 27 to 28`
-*   **Asymmetrical Misconfiguration:** `SG_RESULT = 136` | `PWM_SCALE_SUM = 31`
-
----
-
-## 🛠️ One-Click SSH Installation & Deployment
-
-To install or update the suite, connect via SSH and run:
+To install or update the **JW_APPS** suite on your host controller, connect to your printer via an SSH terminal session and execute the following sequential commands:
 
 ```bash
-cd ~ && rm -rf Jabberwocky-APPS && git clone https://github.com && chmod +x ~/Jabberwocky-APPS/JW_APPS/install.sh && ~/Jabberwocky-APPS/JW_APPS/install.sh
+cd ~
+git clone https://github.com
+./Jabberwocky-APPS/JW_APPS/install.sh
 ```
 
 ---
 
-## 🎛️ Guided Mainsail Bring-Up & Calibration Wizard
+## 🎛️ Post-Installation Setup & Bring-Up
 
-1. Heat nozzle to **150°C**, disengage the guidler carriage, and run the **`ASC_RUN_GEAR_ALIGNMENT_AUDIT`** macro. Verify baseline: `PWM_SCALE_SUM = 27` | `SG_RESULT = 136`.
-2. Load filament, engage the latch, and adjust the anti-squish screw until reaching `Delta = 0` or `1`, then click **`ASC_SAVE_BUILD_CALIBRATION`**.
+Once the deployment script completes its automated environment scans and registers the suite with Moonraker, execute a full **`FIRMWARE_RESTART`** inside your web dashboard interface.
 
----
-
-## ☕ Support & License
-
-Developed by **Kinematicdigit** and the Jabberwocky Engineering Team. Contributions can be made via [Buy Me A Coffee](https://paypal.me). Licensed under the MIT License.
+### 🏁 Real-Time Mechanical Calibration Routine
+1. **The Free-Air Scan:** Heat your hotend nozzle to an intermediate standby temperature of **150°C**. Fully disengage the Guidler arm mechanism, ensure the filament track is empty, and click the **`ASC_RUN_GEAR_ALIGNMENT_AUDIT`** shortcut button. Verify that your console logs line up with your healthy baseline signature: `PWM_SCALE_SUM = 27` | `SG_RESULT = 136`.
+2. **The Anti-Squish Dial Pass:** Load a raw strand of filament, engage the primary Guidler latch, and observe your continuous 250ms streaming log telemetry. Slowly turn your anti-squish limit screw by hand until the live data stream balances on a flat **`Delta = 0` or `1`**, then click **`ASC_SAVE_BUILD_CALIBRATION`** right on your screen to secure your parallel pitch centerlines!
