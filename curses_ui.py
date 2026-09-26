@@ -1,6 +1,6 @@
 # =====================================================================
 # JABBERWOCKY APPS Suite — FULL-SCREEN INTERACTIVE CURSES UI
-# VERSION: 1.0.6 [Build_ID: 2026.09.26-RevH]
+# VERSION: 1.0.7 [Build_ID: 2026.09.26-RevM]
 # Location: ./curses_ui.py (MASTER REPOSITORY ROOT ANCHOR)
 # =====================================================================
 import os
@@ -67,20 +67,31 @@ class JabberwockyTerminalUI:
                     stdscr.refresh()
                     
                     # Pull the silent log buffer array straight from the subfolder module
-                    results = self.installer.run_installation_pipeline()
+                    self.installer.run_installation_pipeline()
                     
                     # Clean canvas overlay to wipe out asynchronous overprints completely
                     stdscr.clear()
                     stdscr.attron(curses.A_REVERSE)
-                    stdscr.addstr(0, 0, " 🎉 INSTALLATION DEPLOYMENT COMPLETE ".ljust(w))
+                    stdscr.addstr(0, 0, " 🎉 INSTALLATION SUCCESSFUL — APPS SUITE DEPLOYED ".ljust(w))
                     stdscr.attroff(curses.A_REVERSE)
                     
-                    # Render the log cache safely within the static rows boundaries
-                    for log_idx, log_line in enumerate(results):
-                        if log_idx + 2 < h - 4:
-                            stdscr.addstr(2 + log_idx, 2, f"{log_line}")
+                    # =====================================================================
+                    # 📋 NATIVE UI EXPLICIT POST-INSTALLATION OPERATOR ACTIONS
+                    # =====================================================================
+                    stdscr.addstr(2, 2, "👉 WHAT TO DO NEXT TO INITIALIZE YOUR HARDWARE:", curses.A_BOLD)
                     
-                    stdscr.addstr(h - 2, 2, "Press any key to return to the action menu...")
+                    stdscr.addstr(4, 4, "1. Type 'FIRMWARE_RESTART' inside your Mainsail console log window.")
+                    stdscr.addstr(5, 4, "2. Open your web browser dashboard and verify the macro panel loads.")
+                    stdscr.addstr(6, 4, "3. Execute your first live mechanical bring-up pass:")
+                    
+                    stdscr.attron(curses.A_DIM)
+                    stdscr.addstr(8, 8, "• Heat your nozzle to 150°C to soften frozen filament putty.")
+                    stdscr.addstr(9, 8, "• Open your toolhead Guidler latch completely (empty track).")
+                    stdscr.addstr(10, 8, "• Click 'ASC_RUN_GEAR_ALIGNMENT_AUDIT' to verify free-air base.")
+                    stdscr.addstr(11, 8, "• Close your latch and turn the anti-squish screw until Delta=0!")
+                    stdscr.attroff(curses.A_DIM)
+                    
+                    stdscr.addstr(h - 2, 2, "Press any key to return to the master action menu...")
                     stdscr.refresh()
                     
                     stdscr.getch()
