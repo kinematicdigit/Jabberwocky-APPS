@@ -3,7 +3,7 @@
 To install or update the **JW_APPS** suite on your host controller, connect to your printer via an SSH terminal session and execute the following sequential commands:
 
 ```bash
-cd ~
+cd ~ && rm -rf Jabberwocky-APPS
 git clone https://github.com/kinematicdigit/Jabberwocky-APPS
 ```
 
