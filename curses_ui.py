@@ -12,10 +12,6 @@ from __future__ import annotations
 import curses
 from typing import Callable, List
 
-# Import JwsAppsInstaller from the top‑level module to avoid relative
-# import errors when this file is executed as a script.
-from jws_installer import JwsAppsInstaller
-
 
 class CursesUI:
     def __init__(self, installer: JwsAppsInstaller):
