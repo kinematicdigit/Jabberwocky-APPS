@@ -30,24 +30,12 @@ Optimized for high-speed compound setups (such as the LDO stepper motor and 44:1
 
 To deploy or update the suite on your host controller, connect to your printer via an SSH terminal session and execute the following sequential commands. Press Enter after each separate line:
 
-### Step 1. Clean previous installation directory scraps:
+### Copy and paste this into your SSH session, it clean previous installation directory scraps, installs and launches the installer:
 ```bash
 cd ~
 rm -rf Jabberwocky-APPS
-```
-
-### Step 2: Clone the complete repository from the official path string
-```bash
 git clone https://github.com/kinematicdigit/Jabberwocky-APPS
-```
-
-### Step 3. Navigate directly inside your new repository folder:
-```bash
 cd ~/Jabberwocky-APPS
-```
-
-### Step 4. Initialize the full-screen interactive curses selection terminal UI menu:
-```bash
 python3 curses_ui.py
 ```
 
