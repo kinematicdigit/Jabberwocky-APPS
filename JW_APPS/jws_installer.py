@@ -1,6 +1,6 @@
 # =====================================================================
 # JABBERWOCKY APPS Suite — DYNAMIC RELATIVE INGESTION ENGINE
-# VERSION: 3.5.3 [Build_ID: 9942-RevC]
+# VERSION: 3.5.5 [Build_ID: 9945-RevE]
 # Location: JW_APPS/jws_installer.py
 # =====================================================================
 #!/usr/bin/env python3
@@ -13,15 +13,12 @@ from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        # Tracking identifiers to print during deployment passes
-        self.installer_version = "v3.5.3"
-        self.build_id = "Build-9942_Revision_C"
+        self.installer_version = "v3.5.5"
+        self.build_id = "Build-9945_Revision_E"
         
-        # Dynamically map absolute source execution layout boundaries
         self.install_dir = Path(__file__).resolve().parent
         self.jwt_src_dir = self.install_dir / "jw_toolhead"
         
-        # Standardize target environments matching Klipper deployment specs dynamically via Path.home()
         self.klipper_extras_path = Path.home() / "klipper/klippy/extras"
         self.klipper_config_root = Path.home() / "printer_data/config"
         self.printer_cfg_path = self.klipper_config_root / "printer.cfg"
@@ -29,24 +26,36 @@ class JwsAppsInstaller:
 
     def audit_environment(self) -> bool:
         print(f"⚙️  Installer Engine Initialized: {self.installer_version} ({self.build_id})")
-        if not self.jwt_src_dir.is_dir() or not self.klipper_extras_path.is_dir():
-            print(f"❌ ERROR: Core source code or Klipper target folders missing.")
-            print(f"  • Source Check : {self.jwt_src_dir}")
-            print(f"  • Target Check : {self.klipper_extras_path}")
+        if not self.jwt_src_dir.is_dir() or not self.klipper_extras_path.is_dir() or not self.printer_cfg_path.is_file():
+            print(f"❌ ERROR: Core target folders or printer.cfg missing.")
             return False
         return True
 
     def scan_and_mask_legacy_extruder(self) -> bool:
         print("🔍 Scanner: Auditing 'printer.cfg' for conflicting extruder blocks...")
-        if not self.printer_cfg_path.is_file(): return False
-        
         content = self.printer_cfg_path.read_text(encoding="utf-8")
-        include_tag = "[include jabberwocky_dist/jwt_clutch_logic.cfg]"
         
-        if include_tag in content:
-            print(f"ℹ️  Scanner: Jabberwocky inclusion blocks already active. Overwriting asset directories only.")
+        # --- TYPO OVERWRITE CLEANUP ENGINE ---
+        # Instead of skipping the file if an include line exists, we actively scan for and scrub out
+        # any historical experimental config header names leftover from previous integration sweeps.
+        old_headers = ["[jwt_assembly_wizard]", "[asc_install_wizard]"]
+        needs_rewrite = False
+        
+        for old_h in old_headers:
+            if old_h in content:
+                print(f"🧹 Scanner: Legacy header '{old_h}' identified. Rewriting to native format...")
+                content = content.replace(old_h, "[jwt_assembly_wizard]")
+                needs_rewrite = True
+                
+        if needs_rewrite:
+            self.printer_cfg_path.write_text(content, encoding="utf-8")
+            
+        include_tag = "[include jabberwocky_dist/jwt_clutch_logic.cfg]"
+        if include_tag in content and "[jwt_assembly_wizard]" in content:
+            print(f"ℹ️  Scanner: Jabberwocky core section headers active and synchronized. Moving to assets.")
             return True
 
+        # Run full initialization pass if a clean config write is needed
         lines = content.splitlines()
         updated_lines = []
         in_legacy_block = False
@@ -56,7 +65,7 @@ class JwsAppsInstaller:
         for line in lines:
             cleaned = line.strip().lower()
             
-            # Boundary Check: If entering a new config stanza header, cut the masking flag instantly
+            # Boundary Check: Cut the comment block masking flag instantly if entering another header
             if in_legacy_block and cleaned.startswith("["):
                 if not any(re.match(t, cleaned) for t in targets):
                     in_legacy_block = False
@@ -71,7 +80,7 @@ class JwsAppsInstaller:
             else:
                 updated_lines.append(line)
 
-        # Unified configuration injection footer block matching the filename node perfectly
+        # Append execution parameters to the bottom of the config file
         updated_lines.append("\n# =====================================================================")
         updated_lines.append(f"# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION ({self.installer_version})")
         updated_lines.append("# =====================================================================")
@@ -90,8 +99,12 @@ class JwsAppsInstaller:
         klipper_extras_dest = self.klipper_extras_path / "jwt_assembly_wizard.py"
         
         try:
-            if klipper_extras_dest.is_symlink() or klipper_extras_dest.is_file():
-                klipper_extras_dest.unlink()
+            # Force unlinking of old experimental files to avoid namespace clutter
+            for stale_file in ["asc_install_wizard.py", "jwt_assembly_wizard.py"]:
+                stale_path = self.klipper_extras_path / stale_file
+                if stale_path.is_symlink() or stale_path.is_file():
+                    stale_path.unlink()
+                    
             os.symlink(str(target_wizard_src), str(klipper_extras_dest))
             print(f"  • Symlinked background execution daemon into Klipper extras [Ver: {self.installer_version}].")
             
