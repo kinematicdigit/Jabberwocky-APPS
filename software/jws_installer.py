@@ -1,26 +1,25 @@
 # =====================================================================
-# JABBERWOCKY APPS Suite — PURE ADDITIVE CONFIG INGESTION ENGINE
-# VERSION: 3.6.2 [Build_ID: 2026.09.26-RevL]
+# JABBERWOCKY APPS Suite — BOUNDED CONFIG INTEGRATION ENGINE
+# VERSION: 3.6.3 [Build_ID: 2026.09.26-RevM]
 # Location: ./software/jws_installer.py
 # =====================================================================
 #!/usr/bin/env python3
 
 import os
 import sys
+import re
 import shutil
 from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.6.2"
-        self.build_id = "Build-2026.09.26_Revision_L"
+        self.installer_version = "v3.6.3"
+        self.build_id = "Build-2026.09.26_Revision_M"
         
-        # Dynamically map working paths relative to this script directory
         self.software_dir = Path(__file__).resolve().parent
         self.install_dir = self.software_dir.parent
         self.jwt_src_dir = self.software_dir / "jw_toolhead"
         
-        # Standard target environments matching your system profile home paths
         self.klipper_extras_path = Path.home() / "klipper/klippy/extras"
         self.klipper_config_root = Path.home() / "printer_data/config"
         self.printer_cfg_path = self.klipper_config_root / "printer.cfg"
@@ -39,29 +38,74 @@ class JwsAppsInstaller:
             return False
         return True
 
-    def inject_inclusion_tag(self) -> bool:
-        self.log("🔍 Scanner: Updating 'printer.cfg' inclusion map parameters...")
+    def process_configuration_file(self) -> bool:
+        self.log("🔍 Scanner: Auditing 'printer.cfg' for integration layout...")
         content = self.printer_cfg_path.read_text(encoding="utf-8")
         include_tag = "[include jabberwocky_dist/jwt_clutch_logic.cfg]"
         
-        # 🧹 CLEANUP TRACKS: Clean out old broken experimental block tags if they exist
-        old_headers = ["[jwt_assembly_wizard]", "[asc_install_wizard]"]
-        for old_h in old_headers:
-            if old_h in content:
-                content = content.replace(old_h, "")
-                self.printer_cfg_path.write_text(content, encoding="utf-8")
+        # 🧹 CLEANUP TRACKS: Clean out old legacy configuration header line fragments if they exist
+        old_headers = [r"\[jwt_assembly_wizard\]\s*\n", r"\[asc_install_wizard\]\s*\n"]
+        for pattern in old_headers:
+            if re.search(pattern, content):
+                content = re.sub(pattern, "", content)
 
+        lines = content.splitlines()
+        updated_lines = []
+        in_legacy_block = False
+        save_config_idx = None
+        targets = [r"^\s*\[extruder\]\s*$", r"^\s*\[tmc2209 extruder\]\s*$"]
+        block_count = 0
+
+        # Scan line-by-line to execute safe, bounded comment masking & map the SAVE_CONFIG boundary
+        for i, line in enumerate(lines):
+            cleaned = line.strip().lower()
+            
+            if "#*# <-----------" in line and save_config_idx is None:
+                save_config_idx = i
+
+            # Boundary Gate: Stop commenting the moment we cross into any other hardware group header
+            if in_legacy_block and cleaned.startswith("[") and not cleaned.startswith("#"):
+                if not any(re.match(t, cleaned) for t in targets):
+                    in_legacy_block = False
+
+            if any(re.match(t, cleaned) for t in targets):
+                in_legacy_block = True
+                block_count += 1
+                updated_lines.append(f"\n# 🚨 LEGACY PROFILE MUTED BY JABBERWOCKY INTEGRATION ENGINE")
+
+            if in_legacy_block and not in_legacy_block == False:
+                updated_lines.append(f"# {line}" if cleaned and not cleaned.startswith("#") else line)
+            else:
+                updated_lines.append(line)
+
+        # Re-verify if the include statement is already safely structured in the core lines
         if include_tag in content:
-            self.log("ℹ️  Scanner: Jabberwocky inclusion blocks already active. Proceeding with asset update pipeline.")
+            self.log("ℹ️  Scanner: Jabberwocky include blocks already active. Overwriting assets only.")
             return True
 
-        # Pure additive write sequence that avoids destructive regex line chopping
+        # Construct integration blocks block
+        injection_text = [
+            "",
+            "# =====================================================================",
+            f"# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION ({self.installer_version})",
+            "# =====================================================================",
+            include_tag,
+            ""
+        ]
+
+        if save_config_idx is not None:
+            # 🛡️ SAFE POSITIONING: Splice the include block directly ABOVE the SAVE_CONFIG block marker
+            updated_lines[save_config_idx:save_config_idx] = injection_text
+            self.log("✅ Success: Positioned include block safely ABOVE the SAVE_CONFIG line boundary.")
+        else:
+            # Fallback append if no automated save section exists yet
+            updated_lines.extend(injection_text)
+            self.log("✅ Success: Appended include tag safely to bottom of file.")
+
         backup_path = f"{self.printer_cfg_path}.jwp_bak"
         shutil.copyfile(str(self.printer_cfg_path), backup_path)
-        
-        updated_content = content + f"\n\n# =====================================================================\n# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION ({self.installer_version})\n# =====================================================================\n{include_tag}\n"
-        self.printer_cfg_path.write_text(updated_content, encoding="utf-8")
-        self.log(f"✅ Success: Include parameter injected safely. Backup written: {backup_path}")
+        self.printer_cfg_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+        self.log(f"🧹 Scanner: Safely masked {block_count} duplicate sections and secured formatting limits.")
         return True
 
     def deploy_production_assets(self) -> bool:
@@ -78,7 +122,6 @@ class JwsAppsInstaller:
             os.symlink(str(target_wizard_src), str(klipper_extras_dest))
             self.log("• Symlinked background execution daemon into Klipper extras.")
             
-            # Wipes out any legacy distribution files to guarantee a pristine overwrite pass
             if self.dist_dir.is_dir():
                 shutil.rmtree(self.dist_dir)
             self.dist_dir.mkdir(parents=True, exist_ok=True)
@@ -93,7 +136,7 @@ class JwsAppsInstaller:
             return False
 
     def run_installation_pipeline(self) -> list:
-        if self.audit_environment() and self.inject_inclusion_tag():
+        if self.audit_environment() and self.process_configuration_file():
             self.deploy_production_assets()
         return self.log_buffer
 
