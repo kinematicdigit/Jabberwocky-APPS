@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =====================================================================
 # JABBERWOCKY APPS — INDUSTRY STANDARD SYSTEM ENVIRONMENT DEPLOYER
-# VERSION: 1.0.5 [Build 2026.09.25-RevE]
-# Location: JW_APPS/install.sh
+# VERSION: 1.0.6 [Build 2026.09.26-RevF]
+# Location: software/install.sh
 # =====================================================================
 set -e
 
@@ -15,7 +15,7 @@ MOONRAKER_CONFIG_HOME="${HOME}/printer_data/config/moonraker.conf"
 clear
 echo "====================================================================="
 echo "🐉 JABBERWOCKY APPS: INITIALIZING ECOSYSTEM INTEGRATION"
-echo "   CORE ENGINE RUNTIME: v1.0.5-Patch_E"
+echo "   CORE ENGINE RUNTIME: v1.0.6-Patch_F"
 echo "====================================================================="
 echo "  • System Operator   : ${USER}"
 echo "  • Core Extras Home  : ${KLIPPER_EXTRAS_HOME}"
@@ -39,7 +39,7 @@ if [ -f "${MOONRAKER_CONFIG_HOME}" ]; then
 [update_manager Jabberwocky-APPS]
 type: git_repo
 path: ~/Jabberwocky-APPS
-origin: https://github.com/kinematicdigit/Jabberwocky-APPS.git
+origin: https://github.com
 managed_services: klipper
 EOF
         echo "✅ Moonraker dashboard hooks successfully linked."
