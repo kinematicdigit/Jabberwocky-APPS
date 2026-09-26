@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =====================================================================
 # JABBERWOCKY APPS — INDUSTRY STANDARD SYSTEM ENVIRONMENT DEPLOYER
-# VERSION: 1.0.1
+# VERSION: 1.0.2
 # Location: JW_APPS/install.sh
 # =====================================================================
 set -e
