@@ -1,7 +1,7 @@
 # =====================================================================
 # JABBERWOCKY APPS Suite — DYNAMIC RELATIVE INGESTION ENGINE
-# VERSION: 3.5.8 [Build_ID: 9948-RevG]
-# Location: software/jws_installer.py
+# VERSION: 3.5.9 [Build_ID: 9949-RevH]
+# Location: ./software/jws_installer.py (NESTED APP MATRIX)
 # =====================================================================
 #!/usr/bin/env python3
 
@@ -13,30 +13,30 @@ from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.5.8"
-        self.build_id = "Build-9948_Revision_G"
+        self.installer_version = "v3.5.9"
+        self.build_id = "Build-9949_Revision_H"
         
-        self.install_dir = Path(__file__).resolve().parent
-        self.jwt_src_dir = self.install_dir / "jw_toolhead"
+        # Dynamically jump up to find files relative to the nested software folder layout
+        self.software_dir = Path(__file__).resolve().parent
+        self.install_dir = self.software_dir.parent
+        self.jwt_src_dir = self.software_dir / "jw_toolhead"
         
+        # Standardize target environments matching Klipper deployment specs
         self.klipper_extras_path = Path.home() / "klipper/klippy/extras"
         self.klipper_config_root = Path.home() / "printer_data/config"
         self.printer_cfg_path = self.klipper_config_root / "printer.cfg"
         self.dist_dir = self.klipper_config_root / "jabberwocky_dist"
         
-        # 📋 THE SILENT LOGGING BUFFER
-        # Replaces raw stdout prints to keep curses windows stable
         self.log_buffer = []
 
     def log(self, message: str):
-        """Appends status messages to the isolated log cache."""
         self.log_buffer.append(message)
 
     def audit_environment(self) -> bool:
         self.log_buffer.clear()
         self.log(f"⚙️  Installer Engine Initialized: {self.installer_version} ({self.build_id})")
         if not self.jwt_src_dir.is_dir() or not self.klipper_extras_path.is_dir() or not self.printer_cfg_path.is_file():
-            self.log("❌ ERROR: Core target folders or printer.cfg missing.")
+            self.log(f"❌ ERROR: Core target folders missing from drive paths.")
             return False
         return True
 
@@ -88,13 +88,11 @@ class JwsAppsInstaller:
             return False
 
     def run_installation_pipeline(self) -> list:
-        """Executes the pipeline silently and returns the accumulated logs to the UI loop."""
         if self.audit_environment() and self.inject_inclusion_tag():
             self.deploy_production_assets()
         return self.log_buffer
 
 if __name__ == "__main__":
-    # If invoked standalone outside of curses, print out the cache normally
     installer = JwsAppsInstaller()
     for entry in installer.run_installation_pipeline():
         print(entry)
