@@ -1,6 +1,6 @@
 # =====================================================================
-# JABBERWOCKY APPS SUITE — NESTED ASSET INTEGRATION ENGINE
-# VERSION: 3.6.6 [Nested Path Routing Corrected]
+# JABBERWOCKY APPS SUITE — CLEAN DYNAMIC INTEGRATION ENGINE
+# VERSION: 3.6.7 [Indentation Tree Restructured]
 # Location: ./software/jws_installer.py
 # =====================================================================
 #!/usr/bin/env python3
@@ -13,8 +13,8 @@ from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.6.6"
-        self.build_id = "Build-2026.09.26_Revision_P"
+        self.installer_version = "v3.6.7"
+        self.build_id = "Build-2026.09.26_Revision_Q"
         
         # Locate the active software folder directory natively
         self.software_dir = Path(__file__).resolve().parent
@@ -96,7 +96,7 @@ class JwsAppsInstaller:
         self.log(f"🧹 Scanner: Safely masked {block_count} duplicate sections and secured formatting limits.")
         return True
 
-     def deploy_production_assets(self) -> bool:
+    def deploy_production_assets(self) -> bool:
         self.log("Driver Loop Flag: Deploying Python system extensions to Klipper extras...")
         target_wizard_src = self.jwt_src_dir / "jwt_assembly_wizard.py"
         klipper_extras_dest = self.klipper_extras_path / "jwt_assembly_wizard.py"
@@ -114,11 +114,9 @@ class JwsAppsInstaller:
                 shutil.rmtree(self.dist_dir)
             self.dist_dir.mkdir(parents=True, exist_ok=True)
             
-            # 🦾 FIXED ASSET LOOP: Iterates cleanly across every file to guarantee 
-            # that jwt_hardware.cfg and your calibration assets are cleanly copied down
+            # Sweeps every file into place to ensure macro include tracks remain intact
             for item in self.jwt_src_dir.iterdir():
                 if item.is_file() and item.suffix in ['.cfg', '.py']:
-                    # We copy everything over to ensure the macro inclusion paths have their targets
                     shutil.copy2(str(item), str(self.dist_dir / item.name))
             self.log("• Copied optimized toolhead macro configurations to jabberwocky_dist/.")
             return True
