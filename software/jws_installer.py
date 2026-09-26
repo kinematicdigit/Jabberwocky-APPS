@@ -1,6 +1,6 @@
 # =====================================================================
-# JABBERWOCKY APPS Suite — PURE TOP-LOAD CONFIG INTEGRATION ENGINE
-# VERSION: 3.6.4 [Build_ID: 2026.09.26-RevN]
+# JABBERWOCKY APPS SUITE — NESTED ASSET INTEGRATION ENGINE
+# VERSION: 3.6.6 [Nested Path Routing Corrected]
 # Location: ./software/jws_installer.py
 # =====================================================================
 #!/usr/bin/env python3
@@ -13,15 +13,17 @@ from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.6.4"
-        self.build_id = "Build-2026.09.26_Revision_N"
+        self.installer_version = "v3.6.6"
+        self.build_id = "Build-2026.09.26_Revision_P"
         
-        # Dynamically map working paths relative to this script directory
+        # Locate the active software folder directory natively
         self.software_dir = Path(__file__).resolve().parent
         self.install_dir = self.software_dir.parent
+        
+        # Map the toolhead asset folder directly inside your active software directory tree
         self.jwt_src_dir = self.software_dir / "jw_toolhead"
         
-        # Standard target environments matching your system profile home paths
+        # Standard system profile home paths
         self.klipper_extras_path = Path.home() / "klipper/klippy/extras"
         self.klipper_config_root = Path.home() / "printer_data/config"
         self.printer_cfg_path = self.klipper_config_root / "printer.cfg"
@@ -45,7 +47,6 @@ class JwsAppsInstaller:
         content = self.printer_cfg_path.read_text(encoding="utf-8")
         include_tag = "[include jabberwocky_dist/jwt_clutch_logic.cfg]"
         
-        # 🧹 CLEANUP TRACKS: Clean out old legacy configuration header line fragments if they exist
         old_headers = [r"\[jwt_assembly_wizard\]\s*\n", r"\[asc_install_wizard\]\s*\n"]
         for pattern in old_headers:
             if re.search(pattern, content):
@@ -57,7 +58,6 @@ class JwsAppsInstaller:
         targets = [r"^\s*\[extruder\]\s*$", r"^\s*\[tmc2209 extruder\]\s*$"]
         block_count = 0
 
-        # Scan line-by-line to execute safe comment masking of the legacy blocks
         for i, line in enumerate(lines):
             cleaned = line.strip().lower()
 
@@ -75,13 +75,10 @@ class JwsAppsInstaller:
             else:
                 updated_lines.append(line)
 
-        # If the include tag is already active in the content, don't inject a duplicate row
         if include_tag in content:
             self.log("ℹ️  Scanner: Jabberwocky include blocks already active. Overwriting assets only.")
             return True
 
-        # 🛡️ THE HAPPY HARE TOP-LOAD STRUCTURE:
-        # Construct the injection text blocks and position them at index 0 (the absolute top row of the file)
         injection_text = [
             "# =====================================================================",
             f"# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION ({self.installer_version})",
@@ -90,7 +87,6 @@ class JwsAppsInstaller:
             "",
         ]
         
-        # Inject directly at the start of the configuration file list
         updated_lines[0:0] = injection_text
         self.log("✅ Success: Positioned include block safely at the ABSOLUTE TOP of the configuration file.")
 
