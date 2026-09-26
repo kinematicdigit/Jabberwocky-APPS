@@ -12,8 +12,8 @@ from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.6.0"
-        self.build_id = "Build-2026.09.26_Revision_J"
+        self.installer_version = "v3.6.1"
+        self.build_id = "Build-2026.09.26_Revision_K"
         
         # Dynamically map working paths relative to this script directory
         self.software_dir = Path(__file__).resolve().parent
