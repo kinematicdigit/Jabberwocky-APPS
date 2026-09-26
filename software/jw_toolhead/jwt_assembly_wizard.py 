@@ -1,11 +1,11 @@
 # =====================================================================
 # JWS V3.0 — KLIPPER LIVE ECOSYSTEM EXTENSION DAEMON MODULE
-# VERSION: 3.3.4 [Klipper Plugin Class Mapping Fixed]
+# VERSION: 3.3.5 [Constructor & Return Handshake Locked]
 # Location: tools/jwt_assembly_wizard.py (Symlinked to Klipper Extras)
 # =====================================================================
 #!/usr/bin/env python3
 
-class jwt_assembly_wizard: # ◄── FIXED: Class name must match the filename for Klipper registration
+class jwt_assembly_wizard:
     def __init__(self, config):
         self.printer = config.get_printer()
         self.gcode = self.printer.lookup_object('gcode')
@@ -33,8 +33,8 @@ class jwt_assembly_wizard: # ◄── FIXED: Class name must match the filename
             else:
                 p_date = "2026-09-26-fallback"
                 p_arch = "LDO-44-17-Internal"
-                forward_raw_stream = [31, 31, 31, 29, 28, 27, 27]
-                reverse_raw_stream = [25, 25, 25, 26, 26, 27, 27]
+                forward_raw_stream = ["31", "31", "31", "29", "28", "27", "27"]
+                reverse_raw_stream = ["25", "25", "25", "26", "26", "27", "27"]
 
             gcmd.respond_info(f"\n▲ ASC: Ingested telemetry vector library [{p_arch}] (Released: {p_date})")
             gcmd.respond_info("👉 INSTRUCTION: Close your Guidler arm latch and adjust the anti-squish screw by hand.")
