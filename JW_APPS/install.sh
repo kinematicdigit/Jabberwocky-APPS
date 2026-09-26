@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =====================================================================
 # JABBERWOCKY APPS — INDUSTRY STANDARD SYSTEM ENVIRONMENT DEPLOYER
-# VERSION: 1.0.3 [Build 2026.09.25-RevC]
+# VERSION: 1.0.5 [Build 2026.09.25-RevE]
 # Location: JW_APPS/install.sh
 # =====================================================================
 set -e
@@ -15,7 +15,7 @@ MOONRAKER_CONFIG_HOME="${HOME}/printer_data/config/moonraker.conf"
 clear
 echo "====================================================================="
 echo "🐉 JABBERWOCKY APPS: INITIALIZING ECOSYSTEM INTEGRATION"
-echo "   CORE ENGINE RUNTIME: v1.0.3-Patch_C"
+echo "   CORE ENGINE RUNTIME: v1.0.5-Patch_E"
 echo "====================================================================="
 echo "  • System Operator   : ${USER}"
 echo "  • Core Extras Home  : ${KLIPPER_EXTRAS_HOME}"
@@ -39,13 +39,25 @@ if [ -f "${MOONRAKER_CONFIG_HOME}" ]; then
 [update_manager Jabberwocky-APPS]
 type: git_repo
 path: ~/Jabberwocky-APPS
-origin: https://github.com
+origin: https://github.com/kinematicdigit/Jabberwocky-APPS.git
 managed_services: klipper
 EOF
         echo "✅ Moonraker dashboard hooks successfully linked."
     fi
 fi
 
+# =====================================================================
+# 📋 OPERATOR POST-INSTALL INSTRUCTION CHECKLIST
+# =====================================================================
 echo "---------------------------------------------------------------------"
-echo "🎉 SUCCESS: Ingestion pipeline cleared out. Execute a FIRMWARE_RESTART."
+echo "🎉 SUCCESS: Ingestion pipeline cleared out cleanly!"
+echo "====================================================================="
+echo "👉 WHAT TO DO NEXT TO INITIALIZE YOUR HARDWARE:"
+echo "   1. Type 'FIRMWARE_RESTART' inside your Mainsail console log window."
+echo "   2. Open your web browser dashboard and verify the macro panel loads."
+echo "   3. Execute your first live mechanical bring-up pass:"
+echo "      • Heat your nozzle to 150°C to soften frozen filament putty."
+echo "      • Open your toolhead Guidler latch completely (empty track)."
+echo "      • Click 'ASC_RUN_GEAR_ALIGNMENT_AUDIT' to verify free-air base."
+echo "      • Close your latch and turn the anti-squish screw until Delta=0!"
 echo "====================================================================="
