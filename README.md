@@ -89,8 +89,12 @@ If you find this project useful, consider supporting continued development:
 ## ⚠️ Acknowledgements and Thank You
 
 > The Jabberwocky‑APPS suite would not have been possible without the dedication and expertise of the entire community.
->
+
 > A special thank you to the developers of Klipper, Marlin, and the open‑source firmware community that provides the foundation for this work.
->
+
 > We also appreciate the contributions from hardware partners and beta testers who helped shape the toolhead and probe firmware.
+
+---
+
+**Revision Date:** 2026‑09‑26
 
