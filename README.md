@@ -12,7 +12,7 @@ The recommended workflow is:
 
 ```bash
 cd ~
-rm -rf jabberwocky-APPS  # optional – removes any prior installation
+rm -rf Jabberwocky-APPS  # optional – removes any prior installation
 git clone https://github.com/kinematicdigit/Jabberwocky-APPS
 ```
 
