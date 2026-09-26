@@ -19,7 +19,7 @@ git clone https://github.com/kinematicdigit/Jabberwocky-APPS
 Once cloned run the installer from the root of the repository:
 
 ```bash
-cd ~/jabberwocky-APPS
+cd ~/Jabberwocky-APPS
 chmod +x software/install.sh
 ./software/install.sh
 ```
