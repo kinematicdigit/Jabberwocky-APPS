@@ -1,27 +1,26 @@
 # =====================================================================
-# JABBERWOCKY APPS Suite — DYNAMIC RELATIVE INGESTION ENGINE
-# VERSION: 3.5.9 [Build_ID: 9949-RevH]
-# Location: ./software/jws_installer.py (NESTED APP MATRIX)
+# JABBERWOCKY APPS Suite — PURE ADDITIVE CONFIG INGESTION ENGINE
+# VERSION: 3.6.0 [Build_ID: 2026.09.26-RevJ]
+# Location: ./software/jws_installer.py
 # =====================================================================
 #!/usr/bin/env python3
 
 import os
 import sys
-import re
 import shutil
 from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.5.9"
-        self.build_id = "Build-9949_Revision_H"
+        self.installer_version = "v3.6.0"
+        self.build_id = "Build-2026.09.26_Revision_J"
         
-        # Dynamically jump up to find files relative to the nested software folder layout
+        # Dynamically map working paths relative to this script directory
         self.software_dir = Path(__file__).resolve().parent
         self.install_dir = self.software_dir.parent
         self.jwt_src_dir = self.software_dir / "jw_toolhead"
         
-        # Standardize target environments matching Klipper deployment specs
+        # Standard target environments matching your system profile home paths
         self.klipper_extras_path = Path.home() / "klipper/klippy/extras"
         self.klipper_config_root = Path.home() / "printer_data/config"
         self.printer_cfg_path = self.klipper_config_root / "printer.cfg"
@@ -36,7 +35,7 @@ class JwsAppsInstaller:
         self.log_buffer.clear()
         self.log(f"⚙️  Installer Engine Initialized: {self.installer_version} ({self.build_id})")
         if not self.jwt_src_dir.is_dir() or not self.klipper_extras_path.is_dir() or not self.printer_cfg_path.is_file():
-            self.log(f"❌ ERROR: Core target folders missing from drive paths.")
+            self.log("❌ ERROR: Core target folders or printer.cfg missing from host drive.")
             return False
         return True
 
@@ -45,6 +44,7 @@ class JwsAppsInstaller:
         content = self.printer_cfg_path.read_text(encoding="utf-8")
         include_tag = "[include jabberwocky_dist/jwt_clutch_logic.cfg]"
         
+        # 🧹 CLEANUP TRACKS: Clean out old broken experimental block tags if they exist
         old_headers = ["[jwt_assembly_wizard]", "[asc_install_wizard]"]
         for old_h in old_headers:
             if old_h in content:
@@ -55,6 +55,7 @@ class JwsAppsInstaller:
             self.log("ℹ️  Scanner: Jabberwocky inclusion blocks already active.")
             return True
 
+        # Pure additive write sequence that avoids destructive regex line chopping
         backup_path = f"{self.printer_cfg_path}.jwp_bak"
         shutil.copyfile(str(self.printer_cfg_path), backup_path)
         
