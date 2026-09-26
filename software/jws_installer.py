@@ -32,64 +32,83 @@ class JwsAppsInstaller:
         return True
 
     def scan_and_mask_legacy_extruder(self) -> bool:
+        """Audit and modify the printer.cfg.
+
+        * Back up the original file with a timestamped suffix.
+        * Comment out legacy `[extruder]` blocks if present.
+        * Insert the Jabberwocky include block **just before** the
+          `#*# SAVE_CONFIG` marker (or at the end if the marker is missing).
+        * If the block already exists, simply return ``True``.
+        """
         print("🔍 Scanner: Auditing 'printer.cfg' for conflicting extruder blocks...")
+
+        # Read the current config
         content = self.printer_cfg_path.read_text(encoding="utf-8")
-        
-        # --- TYPO OVERWRITE CLEANUP ENGINE ---
-        # Instead of skipping the file if an include line exists, we actively scan for and scrub out
-        # any historical experimental config header names leftover from previous integration sweeps.
+        lines = content.splitlines()
+
+        # Remove legacy header artifacts that may have slipped in
         old_headers = ["[jwt_assembly_wizard]", "[asc_install_wizard]"]
-        needs_rewrite = False
-        
         for old_h in old_headers:
             if old_h in content:
-                print(f"🧹 Scanner: Legacy header '{old_h}' identified. Rewriting to native format...")
+                print(f"🧹 Scanner: Legacy header '{old_h}' found – normalising to native format.")
                 content = content.replace(old_h, "[jwt_assembly_wizard]")
-                needs_rewrite = True
-                
-        if needs_rewrite:
-            self.printer_cfg_path.write_text(content, encoding="utf-8")
-            
+                lines = content.splitlines()
+
         include_tag = "[include jabberwocky_dist/jwt_clutch_logic.cfg]"
-        if include_tag in content and "[jwt_assembly_wizard]" in content:
-            print(f"ℹ️  Scanner: Jabberwocky core section headers active and synchronized. Moving to assets.")
+        macro_tag = "[jwt_assembly_wizard]"
+
+        # If the block is already present, skip rewriting
+        if include_tag in content and macro_tag in content:
+            print("ℹ️  Scanner: Jabberwocky block already present – no changes made.")
             return True
 
-        # Run full initialization pass if a clean config write is needed
-        lines = content.splitlines()
-        updated_lines = []
-        in_legacy_block = False
-        targets = [r"^\s*\[extruder\]\s*$", r"^\s*\[tmc2209 extruder\]\s*$"]
+        # Comment out any legacy extruder blocks
         block_count = 0
-
+        targets = [r"^\s*\[extruder\]\s*$", r"^\s*\[tmc2209 extruder\]\s*$"]
+        in_legacy_block = False
+        updated_lines: list[str] = []
         for line in lines:
             cleaned = line.strip().lower()
-            
-            # Boundary Check: Cut the comment block masking flag instantly if entering another header
-            if in_legacy_block and cleaned.startswith("["):
-                if not any(re.match(t, cleaned) for t in targets):
-                    in_legacy_block = False
-
             if any(re.match(t, cleaned) for t in targets):
                 in_legacy_block = True
                 block_count += 1
-                updated_lines.append(f"\n# 🚨 LEGACY PROFILE MUTED BY JABBERWOCKY MACRO MANAGER DASHBOARD")
-
+                updated_lines.append("\n# 🚨 LEGACY PROFILE MUTED BY JABBERWOCKY MACRO MANAGER DASHBOARD")
             if in_legacy_block:
+                # Comment out the line unless it already starts with a comment
                 updated_lines.append(f"# {line}" if cleaned and not cleaned.startswith("#") else line)
             else:
                 updated_lines.append(line)
+            if in_legacy_block and cleaned.startswith("[") and not any(re.match(t, cleaned) for t in targets):
+                # Exiting the block when encountering a new section header
+                in_legacy_block = False
 
-        # Append execution parameters to the bottom of the config file
-        updated_lines.append("\n# =====================================================================")
-        updated_lines.append(f"# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION ({self.installer_version})")
-        updated_lines.append("# =====================================================================")
-        updated_lines.append(include_tag)
-        updated_lines.append("[jwt_assembly_wizard]\n")
+        # Build the Jabberwocky block
+        jabberwocky_block = [
+            "\n# =====================================================================",
+            f"# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION ({self.installer_version})",
+            "# =====================================================================",
+            include_tag,
+            "[jwt_assembly_wizard]\n",
+        ]
 
-        backup_path = f"{self.printer_cfg_path}.jwp_bak"
+        # Find the SAVE_CONFIG marker
+        save_config_marker = "#*# SAVE_CONFIG"
+        try:
+            marker_idx = content.index(save_config_marker)
+            # Split the original content at the marker
+            before = content[:marker_idx]
+            after = content[marker_idx:]
+            new_content = before + "\n".join(jabberwocky_block) + after
+        except ValueError:
+            # Marker not found – append at the end
+            new_content = "\n".join(updated_lines + jabberwocky_block)
+
+        # Timestamped backup
+        import time
+        timestamp = time.strftime("%Y%m%d%H%M%S")
+        backup_path = f"{self.printer_cfg_path}.jwp_bak.{timestamp}"
         shutil.copyfile(str(self.printer_cfg_path), backup_path)
-        self.printer_cfg_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+        self.printer_cfg_path.write_text(new_content + "\n", encoding="utf-8")
         print(f"✅ Success: Masked {block_count} legacy blocks. Backup written: {backup_path}")
         return True
 
