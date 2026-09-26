@@ -1,6 +1,6 @@
 # =====================================================================
 # JWS V3.0 — KLIPPER LIVE ECOSYSTEM EXTENSION DAEMON MODULE
-# VERSION: 3.3.0 [Dynamic Metadata Ingestion Pass]
+# VERSION: 3.3.3 [Dynamic Ingestion & Traps Cleared]
 # Location: tools/jwt_assembly_wizard.py (Symlinked to Klipper Extras)
 # =====================================================================
 #!/usr/bin/env python3
@@ -12,25 +12,26 @@ class AscRealTimeAuditor:
         self.grind_ceiling = 31
         self.max_delta = 2
         
-        # Bind commands to Klipper's firmware registry
+        # Bind the live custom commands straight into Klipper's active firmware registry
         self.gcode.register_command("ASC_INSTALL_WIZARD", self.cmd_ASC_INSTALL_WIZARD, desc="Runs 44:17 dynamic sweeps")
         self.gcode.register_command("ASC_SAVE_BUILD", self.cmd_ASC_SAVE_BUILD, desc="Locks parallel pitch alignment")
         self.gcode.register_command("JWT_CLUTCH_STATUS", self.cmd_JWT_CLUTCH_STATUS, desc="Queries active stress logs")
 
     def cmd_ASC_INSTALL_WIZARD(self, gcmd):
-        """Dynamically ingests telemetry arrays and metadata straight out of Klipper runtime macro memory."""
+        """Dynamically ingests and safely splits telemetry string parameters out of Klipper memory."""
         try:
-            # Look up our externalized profile data vault macro object
             profile_macro = self.printer.lookup_object("gcode_macro JABBERWOCKY_PROFILES", None)
             
             if profile_macro is not None:
-                # Dynamically extract metadata and vectors on the fly
                 p_date = profile_macro.variables.get("profile_release_date", "unknown")
                 p_arch = profile_macro.variables.get("profile_architecture", "generic")
-                forward_raw_stream = profile_macro.variables.get("ldo_44_17_forward", [])
-                reverse_raw_stream = profile_macro.variables.get("ldo_44_17_reverse", [])
+                raw_f = profile_macro.variables.get("ldo_44_17_forward", "27")
+                raw_r = profile_macro.variables.get("ldo_44_17_reverse", "27")
+                
+                # 🩹 STRIP THE TRAP: Convert the incoming string token arrays into true iterable lists
+                forward_raw_stream = [x.strip() for x in str(raw_f).split(",") if x.strip()]
+                reverse_raw_stream = [x.strip() for x in str(raw_r).split(",") if x.strip()]
             else:
-                # Safe internal fallback parameters if the external file isn't loaded yet
                 p_date = "2026-09-26-fallback"
                 p_arch = "LDO-44-17-Internal"
                 forward_raw_stream = [31, 31, 31, 29, 28, 27, 27]
@@ -58,7 +59,7 @@ class AscRealTimeAuditor:
             gcmd.respond_info("✅ ASC SUCCESS: Dated parallel limits secured and verified.")
             
         except Exception as e:
-            gcmd.respond_info(f"❌ ASC DATA ERROR: Failed to ingest profile vectors: {str(e)}")
+            gcmd.respond_info(f"❌ ASC DATA ERROR: Failed to process vector parameters: {str(e)}")
 
     def cmd_ASC_SAVE_BUILD(self, gcmd):
         gcmd.respond_info("💾 ASC: Committing pitch calibration to jwprobe_runtime_vars.cfg...")
