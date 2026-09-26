@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =====================================================================
 # JABBERWOCKY APPS — INDUSTRY STANDARD SYSTEM ENVIRONMENT DEPLOYER
-# VERSION: 1.0.2
+# VERSION: 1.0.3 [Build 2026.09.25-RevC]
 # Location: JW_APPS/install.sh
 # =====================================================================
 set -e
@@ -15,6 +15,7 @@ MOONRAKER_CONFIG_HOME="${HOME}/printer_data/config/moonraker.conf"
 clear
 echo "====================================================================="
 echo "🐉 JABBERWOCKY APPS: INITIALIZING ECOSYSTEM INTEGRATION"
+echo "   CORE ENGINE RUNTIME: v1.0.3-Patch_C"
 echo "====================================================================="
 echo "  • System Operator   : ${USER}"
 echo "  • Core Extras Home  : ${KLIPPER_EXTRAS_HOME}"
