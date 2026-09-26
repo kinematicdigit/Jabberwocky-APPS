@@ -1,3 +1,4 @@
+# DO NOT USE THIS SOFTWARE UNTIL FULL RELEASE - ALPHA STAGE of development!
 # Jabberwocky-APPS — Asynchronous Print Protection Suite
 
 Jabberwocky-APPS is an advanced, server-level ecosystem extension suite providing real-time mechanical health diagnostics, low-overhead telemetry caching, and protective software clutch overrides for high-performance toolhead drive systems.
