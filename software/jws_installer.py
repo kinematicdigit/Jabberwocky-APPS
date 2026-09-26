@@ -96,7 +96,7 @@ class JwsAppsInstaller:
         self.log(f"🧹 Scanner: Safely masked {block_count} duplicate sections and secured formatting limits.")
         return True
 
-    def deploy_production_assets(self) -> bool:
+     def deploy_production_assets(self) -> bool:
         self.log("Driver Loop Flag: Deploying Python system extensions to Klipper extras...")
         target_wizard_src = self.jwt_src_dir / "jwt_assembly_wizard.py"
         klipper_extras_dest = self.klipper_extras_path / "jwt_assembly_wizard.py"
@@ -114,8 +114,11 @@ class JwsAppsInstaller:
                 shutil.rmtree(self.dist_dir)
             self.dist_dir.mkdir(parents=True, exist_ok=True)
             
+            # 🦾 FIXED ASSET LOOP: Iterates cleanly across every file to guarantee 
+            # that jwt_hardware.cfg and your calibration assets are cleanly copied down
             for item in self.jwt_src_dir.iterdir():
-                if item.is_file() and item.suffix in ['.cfg', '.py'] and item.name != "jwt_assembly_wizard.py":
+                if item.is_file() and item.suffix in ['.cfg', '.py']:
+                    # We copy everything over to ensure the macro inclusion paths have their targets
                     shutil.copy2(str(item), str(self.dist_dir / item.name))
             self.log("• Copied optimized toolhead macro configurations to jabberwocky_dist/.")
             return True
