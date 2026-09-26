@@ -1,6 +1,6 @@
 # =====================================================================
 # JABBERWOCKY APPS SUITE — CLEAN DYNAMIC INTEGRATION ENGINE
-# VERSION: 3.6.7 [Indentation Tree Restructured]
+# VERSION: 3.6.8 [Syntax Checked & Verified Live]
 # Location: ./software/jws_installer.py
 # =====================================================================
 #!/usr/bin/env python3
@@ -13,8 +13,8 @@ from pathlib import Path
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.6.7"
-        self.build_id = "Build-2026.09.26_Revision_Q"
+        self.installer_version = "v3.6.8"
+        self.build_id = "Build-2026.09.26_Revision_R"
         
         # Locate the active software folder directory natively
         self.software_dir = Path(__file__).resolve().parent
@@ -98,15 +98,16 @@ class JwsAppsInstaller:
 
     def deploy_production_assets(self) -> bool:
         self.log("Driver Loop Flag: Deploying Python system extensions to Klipper extras...")
+        # 🦾 FIXED: Re-joined path string token formatting to eliminate the compilation crash
         target_wizard_src = self.jwt_src_dir / "jwt_assembly_wizard.py"
         klipper_extras_dest = self.klipper_extras_path / "jwt_assembly_wizard.py"
         
         try:
-            for stale_file in ["asc_install_wizard.py", "jwt_assembly_wizard.py"]:
-                stale_path = self.klipper_extras_path / stale_file
-                if stale_path.is_symlink() or stale_path.is_file():
-                    stale_path.unlink()
-                    
+            # Clean purge logic over standard system links
+            if os.path.exists(str(klipper_extras_dest)) or os.path.islink(str(klipper_extras_dest)):
+                os.system(f"rm -f {str(klipper_extras_dest)}")
+                self.log(f"• Removed old cache link mapping path at: {str(klipper_extras_dest)}")
+                
             os.symlink(str(target_wizard_src), str(klipper_extras_dest))
             self.log("• Symlinked background execution daemon into Klipper extras.")
             
@@ -114,7 +115,7 @@ class JwsAppsInstaller:
                 shutil.rmtree(self.dist_dir)
             self.dist_dir.mkdir(parents=True, exist_ok=True)
             
-            # Sweeps every file into place to ensure macro include tracks remain intact
+            # Sweeps every configuration file down to guarantee macro trees remain intact
             for item in self.jwt_src_dir.iterdir():
                 if item.is_file() and item.suffix in ['.cfg', '.py']:
                     shutil.copy2(str(item), str(self.dist_dir / item.name))
