@@ -35,7 +35,8 @@ class CursesUI:
             for idx, (label, _) in enumerate(self.options):
                 mode = curses.A_REVERSE if idx == selected else curses.A_NORMAL
                 stdscr.addstr(idx + 2, 2, f"{idx+1}: {label}", mode)
-            stdscr.addstr(len(self.options) + 3, 2, "Use ↑/↓ and ENTER to select, q to quit.")
+            stdscr.addstr(len(self.options) + 3, 2,
+                "Use ↑/↓ to move, ENTER to select, 'q' or ESC to quit.")
             key = stdscr.getch()
             if key in (curses.KEY_UP, ord("k")):
                 selected = (selected - 1) % len(self.options)

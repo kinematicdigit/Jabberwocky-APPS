@@ -53,9 +53,19 @@ class JwsAppsInstaller:
 
     def audit_environment(self) -> bool:
         print(f"⚙️  Installer Engine Initialized: {self.installer_version} ({self.build_id})")
-        if not self.jwt_src_dir.is_dir() or not self.klipper_extras_path.is_dir() or not self.printer_cfg_path.is_file():
-            print(f"❌ ERROR: Core target folders or printer.cfg missing.")
-            return False
+        # Create missing directories or a minimal printer.cfg if needed
+        if not self.jwt_src_dir.is_dir():
+            print(f"⚙️  Creating missing toolhead source directory: {self.jwt_src_dir}")
+            self.jwt_src_dir.mkdir(parents=True, exist_ok=True)
+        if not self.klipper_extras_path.is_dir():
+            print(f"⚙️  Creating missing Klipper extras directory: {self.klipper_extras_path}")
+            self.klipper_extras_path.mkdir(parents=True, exist_ok=True)
+        if not self.printer_cfg_path.is_file():
+            print(f"⚙️  Creating minimal printer.cfg at: {self.printer_cfg_path}")
+            # Ensure the parent directory exists
+            self.printer_cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            # Write a very simple printer.cfg with a SAVE_CONFIG marker
+            self.printer_cfg_path.write_text("# Sample printer.cfg\n#*# SAVE_CONFIG\n", encoding="utf-8")
         return True
 
     def scan_and_mask_legacy_extruder(self) -> bool:
