@@ -6,6 +6,12 @@ To install or update the **JW_APPS** suite on your host controller, connect to y
 cd ~ && rm -rf Jabberwocky-APPS
 git clone https://github.com/kinematicdigit/Jabberwocky-APPS
 ```
+After that copy and paste the following:
+
+```bash
+cd ~/Jabberwocky-APPS/JW_APPS && chmod +x install.sh && ./install.sh
+```
+
 
 ---
 
