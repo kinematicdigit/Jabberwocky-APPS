@@ -1,8 +1,19 @@
 # =====================================================================
 # JABBERWOCKY APPS Suite — DYNAMIC RELATIVE INGESTION ENGINE
 # VERSION: 3.5.5 [Build_ID: 9945-RevE]
-# Location: JW_APPS/jws_installer.py
+# LOCATION: JW_APPS/jws_installer.py
 # =====================================================================
+# NOTE: During installation any legacy [extruder] or [tmc2209 extruder]
+# sections are commented out to avoid conflicts with the Jabberwocky
+# macros.  The original block is preserved with a leading `#` on each
+# line so it can be restored manually if desired.
+#
+# A simple Mainsail dashboard can toggle the use of these legacy
+# settings by setting a global variable (e.g., `use_legacy_extruder`)
+# in a custom config file.  The installer and the background
+# daemon scan that flag at boot to enable or disable the commented
+# block automatically, mirroring the behaviour of the original
+# scanner/scrubber.
 #!/usr/bin/env python3
 
 import os
@@ -10,11 +21,27 @@ import sys
 import re
 import shutil
 from pathlib import Path
+# ``curses_ui`` lives in the same directory as this script, but when the
+# installer is executed as ``python3 jws_installer.py`` relative imports
+# fail because the package is not recognised.  Import it lazily using
+# importlib so the module can be found whether the script is run as a
+# module or a standalone file.
+# Dynamically load ``curses_ui`` from the repository root so the
+# installer can be executed as a plain script without requiring the
+# project to be installed as a package.
+import importlib.util
+from pathlib import Path
+
+_root = Path(__file__).resolve().parent.parent
+spec = importlib.util.spec_from_file_location("curses_ui", _root / "curses_ui.py")
+_curses_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(_curses_module)
+run_curses_ui = _curses_module.run_curses_ui
 
 class JwsAppsInstaller:
     def __init__(self):
-        self.installer_version = "v3.5.5"
-        self.build_id = "Build-9945_Revision_E"
+        self.installer_version = "v3.5.6"
+        self.build_id = "Build-9946_Revision_E"
         
         self.install_dir = Path(__file__).resolve().parent
         self.jwt_src_dir = self.install_dir / "jw_toolhead"
@@ -44,6 +71,14 @@ class JwsAppsInstaller:
 
         # Read the current config
         content = self.printer_cfg_path.read_text(encoding="utf-8")
+        # Load dashboard toggle if present
+        toggle_cfg = self.klipper_config_root / "macro_manager.cfg"
+        use_legacy = False
+        if toggle_cfg.is_file():
+            for line in toggle_cfg.read_text().splitlines():
+                if line.strip().lower().startswith("use_legacy_extruder"):
+                    key, _, val = line.partition("=")
+                    use_legacy = val.strip().lower() in ("1", "true", "yes")
         lines = content.splitlines()
 
         # Remove legacy header artifacts that may have slipped in
@@ -62,7 +97,7 @@ class JwsAppsInstaller:
             print("ℹ️  Scanner: Jabberwocky block already present – no changes made.")
             return True
 
-        # Comment out any legacy extruder blocks
+        # Comment out any legacy extruder blocks unless the dashboard toggle says otherwise
         block_count = 0
         targets = [r"^\s*\[extruder\]\s*$", r"^\s*\[tmc2209 extruder\]\s*$"]
         in_legacy_block = False
@@ -74,8 +109,12 @@ class JwsAppsInstaller:
                 block_count += 1
                 updated_lines.append("\n# 🚨 LEGACY PROFILE MUTED BY JABBERWOCKY MACRO MANAGER DASHBOARD")
             if in_legacy_block:
-                # Comment out the line unless it already starts with a comment
-                updated_lines.append(f"# {line}" if cleaned and not cleaned.startswith("#") else line)
+                # If the toggle is set to use legacy, keep the block as-is
+                if use_legacy:
+                    updated_lines.append(line)
+                else:
+                    # Comment out the line unless it already starts with a comment
+                    updated_lines.append(f"# {line}" if cleaned and not cleaned.startswith("#") else line)
             else:
                 updated_lines.append(line)
             if in_legacy_block and cleaned.startswith("[") and not any(re.match(t, cleaned) for t in targets):
@@ -138,8 +177,95 @@ class JwsAppsInstaller:
             return False
 
     def run(self):
-        if self.audit_environment() and self.scan_and_mask_legacy_extruder():
+        if not self.audit_environment():
+            return
+        if not self.scan_and_mask_legacy_extruder():
+            return
+        # Launch curses UI instead of legacy CLI menu
+        run_curses_ui(self)
+
+    def interactive_menu(self):
+        """Present a simple CLI menu to the user to choose installation
+        actions. Accepts combinations like "1", "2", "1,2", or "3".
+        """
+        print("\n=== Jabberwocky Installer Action Menu ===")
+        print("1 : Toolhead / Extruder / ASC installation")
+        print("2 : Probe installation (future extension)")
+        print("3 : Generic duplicate macro scan, report generation and dashboard instruction")
+        print("Enter choice (e.g., 1,2 or 3): ")
+        choice = input().strip()
+        if not choice:
+            print("No choice provided – aborting.")
+            return
+        # Normalise
+        choice_set = set(part.strip() for part in choice.replace(',', ' ').split())
+        if '1' in choice_set:
             self.deploy_production_assets()
+        if '2' in choice_set:
+            self.deploy_probe_assets()
+        if '3' in choice_set:
+            self.scan_duplicates_and_report()
+            self.provide_dashboard_instructions()
+
+    def deploy_probe_assets(self) -> bool:
+        """Deploy probe assets.
+        Searches the workspace for a ``jabberwockyprobe`` directory and
+        copies its contents into ``printer_data/config/jabberwockyprobe``.
+        The function returns ``False`` if the source cannot be found.
+        """
+        # Find the probe source in the new location: ``jabberwocky/probe`` under the repo root.
+        probe_dir = None
+        # Look for <repo_root>/jabberwocky/probe
+        candidate = _root / "jabberwocky" / "probe"
+        if candidate.is_dir():
+            probe_dir = candidate
+        if not probe_dir:
+            print("❌ Probe source directory not found – cannot deploy.")
+            return False
+        dest_dir = self.klipper_config_root / "jabberwockyprobe"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for item in probe_dir.iterdir():
+            if item.is_file():
+                shutil.copy2(item, dest_dir / item.name)
+        print(f"✅ Probe assets copied to {dest_dir}")
+        # Touch a flag file to indicate the files were copied.
+        (dest_dir / "copied.flag").touch()
+        return True
+
+    def scan_duplicates_and_report(self) -> None:
+        """Scan printer.cfg for duplicate section names and write a report.
+        The report is written to `printer.cfg.duplicate_report.txt`.
+        """
+        cfg_path = self.printer_cfg_path
+        content = cfg_path.read_text(encoding="utf-8")
+        section_names = {}
+        duplicates = []
+        for line in content.splitlines():
+            line_strip = line.strip()
+            if line_strip.startswith("[") and line_strip.endswith("]"):
+                name = line_strip.lower()
+                if name in section_names:
+                    duplicates.append(name)
+                else:
+                    section_names[name] = 1
+        report_path = cfg_path.with_name("printer.cfg.duplicate_report.txt")
+        if duplicates:
+            with open(report_path, "w", encoding="utf-8") as f:
+                f.write("Duplicate section names found in printer.cfg:\n")
+                for d in duplicates:
+                    f.write(f"  {d}\n")
+            print(f"✅ Duplicate report generated at {report_path}")
+        else:
+            print("✅ No duplicate sections detected.")
+
+    def provide_dashboard_instructions(self) -> None:
+        """Print instructions for enabling the dashboard group in Mainsail."""
+        print("\n--- Mainsail Dashboard Setup ---")
+        print("1. Open Mainsail web interface.")
+        print("2. Click the Settings gear icon → Interface → Dashboard Sections.")
+        print("3. Find the group named '🦾 JABBERWOCKY CONTROLS' and enable it.")
+        print("4. Drag the card to your preferred sidebar position.")
+        print("5. All Jabberwocky macros should now appear as buttons.")
 
 if __name__ == "__main__":
     installer = JwsAppsInstaller()
