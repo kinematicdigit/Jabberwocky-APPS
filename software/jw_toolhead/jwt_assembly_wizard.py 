@@ -1,11 +1,11 @@
 # =====================================================================
 # JWS V3.0 — KLIPPER LIVE ECOSYSTEM EXTENSION DAEMON MODULE
-# VERSION: 3.3.3 [Dynamic Ingestion & Traps Cleared]
+# VERSION: 3.3.4 [Klipper Plugin Class Mapping Fixed]
 # Location: tools/jwt_assembly_wizard.py (Symlinked to Klipper Extras)
 # =====================================================================
 #!/usr/bin/env python3
 
-class AscRealTimeAuditor:
+class jwt_assembly_wizard: # ◄── FIXED: Class name must match the filename for Klipper registration
     def __init__(self, config):
         self.printer = config.get_printer()
         self.gcode = self.printer.lookup_object('gcode')
@@ -28,7 +28,6 @@ class AscRealTimeAuditor:
                 raw_f = profile_macro.variables.get("ldo_44_17_forward", "27")
                 raw_r = profile_macro.variables.get("ldo_44_17_reverse", "27")
                 
-                # 🩹 STRIP THE TRAP: Convert the incoming string token arrays into true iterable lists
                 forward_raw_stream = [x.strip() for x in str(raw_f).split(",") if x.strip()]
                 reverse_raw_stream = [x.strip() for x in str(raw_r).split(",") if x.strip()]
             else:
@@ -68,4 +67,4 @@ class AscRealTimeAuditor:
         gcmd.respond_info("📡 JWT: Load metrics uniform. Core registers clean.")
 
 def load_config(config):
-    return AscRealTimeAuditor(config)
+    return jwt_assembly_wizard(config)
