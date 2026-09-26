@@ -30,7 +30,11 @@ fi
 echo "📦 Running internal core configuration preflight engine..."
 python3 "${SRCDIR}/jws_installer.py"
 
-# Natively append update-manager tracing straight to moonraker.conf
+# =====================================================================
+# AUTOMATED MOONRAKER REGISTRATION MODULE (REVISION v1.0.7)
+# =====================================================================
+MOONRAKER_CONFIG_HOME="${HOME}/printer_data/config/moonraker.conf"
+
 if [ -f "${MOONRAKER_CONFIG_HOME}" ]; then
     if ! grep -q "update_manager Jabberwocky-APPS" "${MOONRAKER_CONFIG_HOME}"; then
         echo "🔗 Registering suite blocks straight to Moonraker Update Manager..."
@@ -39,12 +43,13 @@ if [ -f "${MOONRAKER_CONFIG_HOME}" ]; then
 [update_manager Jabberwocky-APPS]
 type: git_repo
 path: ~/Jabberwocky-APPS
-origin: https://github.com
+origin: https://github.com/kinematicdigit/Jabberwocky-APPS
 managed_services: klipper
 EOF
         echo "✅ Moonraker dashboard hooks successfully linked."
     fi
 fi
+
 
 # =====================================================================
 # 📋 OPERATOR POST-INSTALL INSTRUCTION CHECKLIST
