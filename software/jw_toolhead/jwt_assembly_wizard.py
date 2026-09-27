@@ -59,7 +59,7 @@ class jwt_assembly_wizard:
             self.stream_active = True
             
             # Spin the gears uniformly at 5mm/s at safe standby torque
-            self.gcode.run_script_from_command("G91\nG1 E150 F300\G90")
+            self.gcode.run_script_from_command("G91\nG1 E150 F300\nG90")
             
             tick_idx = 0
             direction = gcmd.get_int('DIR', 1)
