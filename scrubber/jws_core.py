@@ -1,131 +1,160 @@
 # =====================================================================
-# JWS V5.7 SYSTEM CORE RUN-LOOP ORCHESTRATOR (jws_core.py)
-# VERSION: 5.7.5 [Quarantine Sync Bridge Mounted Natively - Part 1]
+# JWS SYSTEM CORE RUN-LOOP ORCHESTRATOR (jws_core.py)
+# VERSION: 5.9.0 [Config-Dir Aware Sync, --report, Restart-If-Changed]
 # Location: scrubber/jws_core.py
 # =====================================================================
 #!/usr/bin/env python3
-"""Jabberwocky Scrubber (JWS v5.0) Central Core Orchestration Engine."""
+"""Jabberwocky Scrubber central orchestration engine.
+
+Modes:
+  (default)   audit only: prints the dashboard state, changes nothing
+  --report    read-only inventory and findings (safe when Klipper is down)
+  --sync      apply dashboard toggles to the config files
+  --restart-if-changed   with --sync: ask Moonraker to restart firmware, but only
+                         if a file was actually modified
+"""
 
 from __future__ import annotations
 import sys
 import argparse
 import os
-import re
+import time
+import urllib.request
 from pathlib import Path
 
-# Force tracking alignment relative to the current execution directory track
 CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_SCRIPT_DIR, ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from scrubber.jws_observer import scan
-from scrubber.jws_operator import apply_in_place_masking
+BUILD_VERSION = "5.9.0"
+RESTART_LOCK_NAME = ".jws_sync_lock"
+RESTART_COOLDOWN_SECONDS = 120
 
-def normalize_component_key(target_type: str, raw_name: str) -> str:
-    """Builds a standardized lowercase lookup key token."""
-    clean_name = raw_name.lower().strip()
-    clean_name = clean_name.replace("/", "_").replace("\\", "_")
-    clean_name = clean_name.replace(" ", "_").replace("-", "_").replace(".", "_")
-    return f"{target_type}_{clean_name}"
+from scrubber.jws_observer import build_inventory, scan
+from scrubber.jws_operator import apply_in_place_masking
+from scrubber.jws_analyzers import run_all
+from scrubber.jws_dashboard import _findings_text
+from scrubber.macro_manager import MacroManager, decode_component_key, macro_key_scope
+
 
 def parse_visual_checkboxes(manager_path: Path) -> dict[str, int]:
-    """Maps visual dashboard states directly from the raw UI character brackets."""
-    toggle_states = {}
-    if not manager_path.is_file():
-        return toggle_states
+    """Compatibility wrapper around the shared dashboard state contract."""
+    return MacroManager(manager_path).states
+
+
+def request_restart(moonraker_url: str, timeout: float = 10.0) -> bool:
+    """Ask Moonraker to restart Klipper firmware. Returns True on HTTP success."""
+    req = urllib.request.Request(moonraker_url.rstrip("/") + "/printer/firmware_restart", method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return 200 <= resp.status < 300
+
+
+def _restart_allowed(config_dir: Path) -> bool:
+    lock = config_dir / RESTART_LOCK_NAME
     try:
-        content = manager_path.read_text(encoding="utf-8", errors="ignore")
-        for line in content.splitlines():
-            if not ("[" in line and "]" in line):
-                continue
-            
-            val_match = re.search(r"\[\s*([01])\s*\]", line)
-            if not val_match:
-                continue
-            val = int(val_match.group(1).strip())
-            
-            name_match = re.search(r"(?:📂|⚙️)\s*([A-Za-z0-9_\-\.]+)", line, re.I)
-            if name_match:
-                raw_name = name_match.group(1).strip()
-                target_type = "action" if "⚙️" in line else "file"
-                key_clean = normalize_component_key(target_type, raw_name)
-                toggle_states[key_clean] = val
-    except Exception as e:
-        print(f"⚠️ Trace: Checkbox parse exception: {e}", file=sys.stderr)
-    return toggle_states
-# =====================================================================
-# JWS V5.7 SYSTEM CORE RUN-LOOP ORCHESTRATOR (jws_core.py)
-# Location: scrubber/jws_core.py (Part 2)
-# =====================================================================
+        return time.time() - lock.stat().st_mtime > RESTART_COOLDOWN_SECONDS
+    except OSError:
+        return True
 
-def main():
+
+def _resolve_config_dir(cli_value: str | None) -> Path:
+    if cli_value:
+        return Path(os.path.expanduser(cli_value)).resolve()
+    env_value = os.getenv("PRINTER_CONFIG_DIR")
+    if env_value:
+        return Path(env_value).resolve()
+    return Path(os.path.expanduser("~/printer_data/config")).resolve()
+
+
+def run_sync(config_dir: Path, root_cfg: Path, toggle_manifest: dict) -> list[str]:
+    """Apply every dashboard toggle. Returns one human-readable line per modified entry."""
+    changes: list[str] = []
+
+    inv = build_inventory(root_cfg, config_dir)
+    targets = [Path(p) for p, meta in inv.files.items() if meta["origin"] != "commented"]
+    for key in toggle_manifest:
+        target_type, name = decode_component_key(key)
+        if target_type != "file":
+            continue
+        for path in targets:
+            if apply_in_place_masking(path, toggle_manifest, "file", name.lower(), config_dir=config_dir):
+                changes.append(f"include {name} -> {'ON' if toggle_manifest[key] else 'OFF'} in {inv.rel(path)}")
+
+    # Re-read the tree: switching an include can reveal or hide files that hold macros.
+    inv = build_inventory(root_cfg, config_dir)
+    targets = [Path(p) for p, meta in inv.files.items() if meta["origin"] != "commented"]
+    for key in toggle_manifest:
+        target_type, name = decode_component_key(key)
+        if target_type != "macro":
+            continue
+        scope = macro_key_scope(key)
+        for path in targets:
+            if scope and scope not in (inv.rel(path).lower(), path.name.lower()):
+                continue
+            if apply_in_place_masking(path, toggle_manifest, "macro", name, scope, config_dir=config_dir):
+                changes.append(f"macro {name} -> {'ON' if toggle_manifest[key] else 'OFF'} in {inv.rel(path)}")
+    return changes
+
+
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="JWS Central Sync Loop")
-    parser.add_argument("--sync", action="store_true", help="Sync browser dashboard toggles")
-    args = parser.parse_args()
+    parser.add_argument("--sync", action="store_true", help="Apply browser dashboard toggles to the config files")
+    parser.add_argument("--report", action="store_true", help="Read-only scan and findings (works when Klipper is down)")
+    parser.add_argument("--config-dir", help="Klipper config folder (default: ~/printer_data/config)")
+    parser.add_argument("--restart-if-changed", action="store_true", help="With --sync: restart firmware only if files changed")
+    parser.add_argument("--moonraker-url", default=os.getenv("JWS_MOONRAKER_URL", "http://127.0.0.1:7125"))
+    args = parser.parse_args(argv)
 
-    env_config_path = os.getenv("PRINTER_CONFIG_DIR")
-    if env_config_path:
-        config_dir = Path(env_config_path).resolve()
-    else:
-        config_dir = Path(os.path.expanduser("~/printer_data/config")).resolve()
-
+    config_dir = _resolve_config_dir(args.config_dir)
     root_cfg = config_dir / "printer.cfg"
     manager_cfg = config_dir / "jwt_macro_manager.conf"
 
     if not root_cfg.is_file():
         print(f"❌ Critical Error: Master target config missing at {root_cfg}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
-    toggle_manifest = parse_visual_checkboxes(manager_cfg)
-    simplified_map = {k: v for k, v in toggle_manifest.items()}
-    
+    manager = MacroManager(manager_cfg)
+    toggle_manifest = dict(manager.states)
+
+    mode = "SYNC" if args.sync else ("REPORT" if args.report else "AUDIT ONLY, no files changed; use --sync")
     print("\n📡 =================== JWS RUNTIME MANIFEST AUDIT ===================")
+    print(f"  • Build              : {BUILD_VERSION} ({mode})")
     print(f"  • Config Base Path   : {config_dir}")
-    print(f"  • Unified Toggle Map : {simplified_map}")
+    print(f"  • Dashboard entries  : {len(toggle_manifest)}")
+    print("===================================================================\n")
 
-    if args.sync:
-        root_node, registry_map, scan_warnings = scan(root_cfg, config_dir)
-        detected_files = [Path(f).name for f in registry_map.get("files", {}).keys()]
-        print(f"  • Scanner Tree Files : {detected_files}")
-        print("===================================================================\n")
+    if args.report:
+        inv = build_inventory(root_cfg, config_dir)
+        findings = run_all(inv)
+        print(f"Files in active tree: {len(inv.live_files())}   Macros: {len(inv.macros)}   Hardware blocks: {len(inv.hardware)}")
+        print(_findings_text(findings))
+        return 0
 
-        modified_count = 0
+    if not args.sync:
+        return 0
 
-        for target_key, desired_state in toggle_manifest.items():
-            if not target_key.startswith("file_"):
-                continue
+    changes = run_sync(config_dir, root_cfg, toggle_manifest)
+    for line in changes:
+        print(f"  ✎ {line}")
+    print(f"✅ Sync pass complete. {len(changes)} item(s) changed.")
 
-            key_parts = target_key.split("file_", 1)
-            if len(key_parts) < 2:
-                continue
+    if args.restart_if_changed:
+        if not changes:
+            print("  ➔ Nothing changed, no restart needed.")
+        elif not _restart_allowed(config_dir):
+            print("  ➔ A restart was triggered moments ago; skipping to avoid a loop. Run FIRMWARE_RESTART manually if needed.")
+        else:
+            (config_dir / RESTART_LOCK_NAME).write_text(str(time.time()), encoding="utf-8")
+            try:
+                request_restart(args.moonraker_url)
+                print("  ➔ Firmware restart requested.")
+            except Exception as exc:
+                print(f"  ⚠️  Could not request a restart ({exc}). Run FIRMWARE_RESTART manually.", file=sys.stderr)
+                return 2
+    return 0
 
-            raw_target_name = key_parts[1]
-
-            if raw_target_name.endswith("_cfg"):
-                raw_target_name = raw_target_name[:-4] + ".cfg"
-            elif raw_target_name.endswith("_conf"):
-                raw_target_name = raw_target_name[:-5] + ".conf"
-
-            for f_path in list(registry_map["files"].keys()):
-                p_obj = Path(f_path)
-                was_modified = apply_in_place_masking(p_obj, simplified_map, "file", raw_target_name.lower())
-                if was_modified:
-                    modified_count += 1
-
-            for f_path in list(registry_map["files"].keys()):
-                p_obj = Path(f_path)
-                for mac in registry_map["files"][f_path]["macros"]:
-                    m_mod = apply_in_place_masking(p_obj, simplified_map, "macro", mac.lower())
-                    if m_mod:
-                        modified_count += 1
-
-        print(f"✅ Sync Pass complete. Handled masking shifts across {modified_count} items.")
-
-        # Installer side effects removed; will be executed via installer pipeline.
-    else:
-        print("===================================================================\n")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 #EOF
