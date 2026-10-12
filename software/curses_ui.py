@@ -180,10 +180,7 @@ class JabberwockyTerminalUI:
             stdscr.clear()
             self.header(stdscr, w, "READ-ONLY DIAGNOSTIC REPORT")
 
-            for row, line in enumerate(
-                lines[top:top + page_height],
-                start=2,
-            ):
+            for row, line in enumerate(lines[top:top + page_height], start=2):
                 self.safe_addstr(stdscr, row, 2, line)
 
             self.safe_addstr(
@@ -236,7 +233,6 @@ class JabberwockyTerminalUI:
                         raise FileExistsError(
                             "Could not find an unused report filename."
                         )
-
                 except OSError as exc:
                     error_message = str(exc)
                     if created_path is not None and saved_path is None:
@@ -483,10 +479,12 @@ class JabberwockyTerminalUI:
             elif key in (ord("q"), ord("Q"), 27):
                 break
 
+
 def main():
     curses.wrapper(lambda s: JabberwockyTerminalUI().draw_action_menu(s))
 
 
 if __name__ == "__main__":
     main()
+
 # EOF
