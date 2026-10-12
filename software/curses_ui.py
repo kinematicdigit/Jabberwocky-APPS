@@ -68,7 +68,182 @@ class JabberwockyTerminalUI:
             return None
         except Exception as exc:
             return str(exc) or exc.__class__.__name__
+    def run_report(self, stdscr):
+        """Display the existing read-only diagnostic report."""
+        import subprocess
+        from pathlib import Path
 
+        config_dir = Path(
+            os.path.expanduser(
+                os.environ.get("PRINTER_CONFIG_DIR")
+                or jws_installer.CONFIG_DIR
+            )
+        )
+
+        core_script = Path(REPO_ROOT) / "scrubber" / "jws_core.py"
+
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(core_script),
+                    "--report",
+                    "--config-dir",
+                    str(config_dir),
+                ],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            report_text = result.stdout or "(The report returned no output.)"
+
+            if result.returncode != 0:
+                report_text += (
+                    f"\n\nReport command exited with status "
+                    f"{result.returncode}.\n"
+                )
+
+        except Exception as exc:
+            report_text = (
+                "REPORT GENERATION FAILED\n\n"
+                f"Could not run the diagnostic report:\n{exc}\n\n"
+                "Check the repository path and Python environment."
+            )
+
+        lines = []
+        width = max(20, stdscr.getmaxyx()[1] - 4)
+
+        for raw_line in report_text.splitlines() or ["(Empty report.)"]:
+            wrapped = textwrap.wrap(
+                raw_line,
+                width=width,
+                replace_whitespace=False,
+                drop_whitespace=False,
+                break_long_words=True,
+                break_on_hyphens=False,
+            )
+            lines.extend(wrapped or [""])
+
+        top = 0
+
+        while True:
+            h, w = stdscr.getmaxyx()
+            page_height = max(1, h - 5)
+            max_top = max(0, len(lines) - page_height)
+            top = max(0, min(top, max_top))
+
+            stdscr.clear()
+            self.header(stdscr, w, "READ-ONLY DIAGNOSTIC REPORT")
+
+            for row, line in enumerate(
+                lines[top:top + page_height],
+                start=2,
+            ):
+                self.safe_addstr(stdscr, row, 2, line)
+
+            self.safe_addstr(
+                stdscr,
+                h - 2,
+                1,
+                "UP/DOWN: scroll | PgUp/PgDn: page | S: save | Q: return",
+                curses.A_BOLD,
+            )
+            stdscr.refresh()
+
+            key = stdscr.getch()
+
+            if key in (ord("q"), ord("Q"), 27):
+                return
+
+            elif key in (curses.KEY_UP, ord("k")):
+                top = max(0, top - 1)
+
+            elif key in (curses.KEY_DOWN, ord("j")):
+                top = min(max_top, top + 1)
+
+            elif key == curses.KEY_PPAGE:
+                top = max(0, top - page_height)
+
+            elif key == curses.KEY_NPAGE:
+                top = min(max_top, top + page_height)
+
+            elif key == curses.KEY_HOME:
+                top = 0
+
+            elif key == curses.KEY_END:
+                top = max_top
+
+            elif key in (ord("s"), ord("S")):
+                saved_path = None
+                error_message = None
+                created_path = None
+
+                try:
+                    stamp = time.strftime("%Y%m%d_%H%M%S")
+
+                    for suffix in range(10000):
+                        extra = "" if suffix == 0 else f"_{suffix}"
+                        target = config_dir / (
+                            f"jws_diagnostic_report_{stamp}{extra}.txt"
+                        )
+
+                        try:
+                            with target.open(
+                                "x",
+                                encoding="utf-8",
+                            ) as stream:
+                                created_path = target
+                                stream.write(
+                                    report_text.rstrip("\n") + "\n"
+                                )
+
+                            saved_path = target
+                            break
+
+                        except FileExistsError:
+                            continue
+
+                    if saved_path is None:
+                        raise FileExistsError(
+                            "Could not find an unused report filename."
+                        )
+
+                except OSError as exc:
+                    error_message = str(exc)
+
+                    # Remove only a partial file created by this attempt.
+                    if created_path is not None and saved_path is None:
+                        try:
+                            created_path.unlink()
+                        except OSError:
+                            pass
+
+                stdscr.clear()
+                h, w = stdscr.getmaxyx()
+
+                if saved_path is not None:
+                    self.header(stdscr, w, "REPORT SAVED")
+                    message = f"Saved report to:\n{saved_path}"
+                else:
+                    self.header(stdscr, w, "REPORT SAVE FAILED")
+                    message = f"Could not save the report:\n{error_message}"
+
+                y = self.wrapped(stdscr, 2, 2, message, w - 4)
+
+                self.safe_addstr(
+                    stdscr,
+                    min(y + 1, h - 2),
+                    2,
+                    "Press any key to return to the report.",
+                    curses.A_BOLD,
+                )
+                stdscr.refresh()
+                stdscr.getch()
+    
+    
     def draw_error_screen(self, stdscr, w, h, message):
         stdscr.clear()
         self.header(stdscr, w, "SETUP STOPPED — NOTHING WAS BROKEN")
