@@ -44,8 +44,16 @@ def _noop(stage, message=""):
 
 
 def _backup_files(paths, label):
-    """Copy files under quarantine/<label>/<relative path>. Returns the backup folder."""
+    """Copy files under quarantine/<label>/<relative path>. Returns the backup folder.
+
+    If a destination directory already exists (e.g., duplicate timestamps)
+    a unique suffix is appended to avoid overwriting an existing backup.
+    """
     dest_root = os.path.join(QUARANTINE_DIR, label)
+    counter = 0
+    while os.path.exists(dest_root):
+        counter += 1
+        dest_root = os.path.join(QUARANTINE_DIR, f"{label}_{counter}")
     for path in paths:
         rel = os.path.relpath(os.path.realpath(path), os.path.realpath(CONFIG_DIR))
         dest = os.path.join(dest_root, rel)
@@ -70,7 +78,13 @@ def _adopt_plain_comments(inv, book, stamp):
 
 
 def _sweep(inv, findings, stamp, keep):
-    """Guarded one-shot cleanup: MOVE (never delete) backups and complete orphans into quarantine."""
+    """Guarded one‑shot cleanup: MOVE (never delete) backups and complete orphans into quarantine.
+
+    Existing quarantine destinations are preserved; if a target file would be
+    moved to a destination that already exists we simply skip that move rather
+    than overwriting.  This protects against re‑running a sweep within the
+    same second when a collision would otherwise occur.
+    """
     targets = [p for p in inv.backups if os.path.realpath(p) not in keep]
     for f in findings:
         if f.code == "FILE_ORPHAN":
@@ -81,6 +95,10 @@ def _sweep(inv, findings, stamp, keep):
             continue
         dest = os.path.join(QUARANTINE_DIR, f"sweep_{stamp}", os.path.relpath(os.path.realpath(path), os.path.realpath(CONFIG_DIR)))
         os.makedirs(os.path.dirname(dest), exist_ok=True)
+        # Guard against overwriting an existing quarantine file.
+        if os.path.exists(dest):
+            # Skip the move and keep the existing file.
+            continue
         shutil.move(path, dest)
         moved += 1
     return moved
