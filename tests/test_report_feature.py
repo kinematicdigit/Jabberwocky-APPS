@@ -11,7 +11,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -50,12 +49,14 @@ class FakeScreen:
 
     def getch(self):
         if not self.keys:
-            raise AssertionError("UI requested an unexpected additional key")
+            raise AssertionError(
+                "UI requested an unexpected additional key"
+            )
         return self.keys.pop(0)
 
 
 def snapshot_files(directory):
-    """Capture existing file paths and contents without following directories."""
+    """Capture existing file paths and bytes without following directories."""
     return {
         path.relative_to(directory): path.read_bytes()
         for path in directory.rglob("*")
@@ -63,8 +64,20 @@ def snapshot_files(directory):
     }
 
 
+def run_report_cli(*args):
+    """Run the real report entry point and capture both output streams."""
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    with contextlib.redirect_stdout(stdout):
+        with contextlib.redirect_stderr(stderr):
+            result = jws_core.main(list(args))
+
+    return result, stdout.getvalue(), stderr.getvalue()
+
+
 class TestReportMenuIntegration(unittest.TestCase):
-    def test_enter_on_report_routes_to_report_without_changing_selections(self):
+    def test_enter_on_report_opens_report_without_changing_selections(self):
         ui = curses_ui.JabberwockyTerminalUI()
         screen = FakeScreen(
             [
@@ -92,30 +105,36 @@ class TestReportMenuIntegration(unittest.TestCase):
 
 
 class TestReportScreen(unittest.TestCase):
-    def test_viewing_report_does_not_save_a_file(self):
+    def test_viewing_report_does_not_save_or_change_config_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             config_dir = Path(temporary)
-            printer_cfg = config_dir / "printer.cfg"
-            printer_cfg.write_text("# test configuration\n", encoding="utf-8")
-
-            before = snapshot_files(config_dir)
-            screen = FakeScreen([ord("q")])
-
-            completed = SimpleNamespace(
-                stdout="Diagnostic report test output\n",
-                returncode=0,
+            (config_dir / "printer.cfg").write_text(
+                "[mcu]\nserial: /dev/null\n",
+                encoding="utf-8",
             )
+            before = snapshot_files(config_dir)
+
+            screen = FakeScreen([ord("q")])
+            completed = type(
+                "Completed",
+                (),
+                {
+                    "stdout": "Diagnostic report test output\n",
+                    "returncode": 0,
+                },
+            )()
 
             with patch.dict(
                 os.environ,
                 {"PRINTER_CONFIG_DIR": str(config_dir)},
             ):
-                with patch("subprocess.run", return_value=completed) as run:
+                with patch(
+                    "subprocess.run",
+                    return_value=completed,
+                ) as run:
                     curses_ui.JabberwockyTerminalUI().run_report(screen)
 
-            after = snapshot_files(config_dir)
-
-            self.assertEqual(after, before)
+            self.assertEqual(snapshot_files(config_dir), before)
             run.assert_called_once()
 
             command = run.call_args.args[0]
@@ -123,29 +142,63 @@ class TestReportScreen(unittest.TestCase):
             self.assertIn("--config-dir", command)
             self.assertNotIn("--sync", command)
 
+    def test_nonzero_report_exit_is_displayed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config_dir = Path(temporary)
+            screen = FakeScreen([ord("q")])
+            completed = type(
+                "Completed",
+                (),
+                {
+                    "stdout": "Diagnostic report failed\n",
+                    "returncode": 7,
+                },
+            )()
+
+            with patch.dict(
+                os.environ,
+                {"PRINTER_CONFIG_DIR": str(config_dir)},
+            ):
+                with patch(
+                    "subprocess.run",
+                    return_value=completed,
+                ):
+                    curses_ui.JabberwockyTerminalUI().run_report(screen)
+
+            displayed = "\n".join(
+                text for _y, _x, text, _attr in screen.drawn_text
+            )
+            self.assertIn("Report command exited with status 7.", displayed)
+
     def test_save_uses_unused_filename_and_preserves_existing_report(self):
         with tempfile.TemporaryDirectory() as temporary:
             config_dir = Path(temporary)
-            printer_cfg = config_dir / "printer.cfg"
-            printer_cfg.write_text("# test configuration\n", encoding="utf-8")
+            (config_dir / "printer.cfg").write_text(
+                "# test configuration\n",
+                encoding="utf-8",
+            )
 
             timestamp = "20261011_120000"
             original_report = (
-                config_dir
-                / f"jws_diagnostic_report_{timestamp}.txt"
+                config_dir / f"jws_diagnostic_report_{timestamp}.txt"
             )
+            original_contents = "Existing report must remain untouched.\n"
             original_report.write_text(
-                "Existing report must remain untouched.\n",
+                original_contents,
                 encoding="utf-8",
             )
 
             report_text = "Diagnostic report test output\n"
-            completed = SimpleNamespace(
-                stdout=report_text,
-                returncode=0,
-            )
+            completed = type(
+                "Completed",
+                (),
+                {
+                    "stdout": report_text,
+                    "returncode": 0,
+                },
+            )()
 
-            # S saves; any key dismisses the save result; Q returns.
+            # S saves; X dismisses the save result; Q returns to the menu.
             screen = FakeScreen([ord("s"), ord("x"), ord("q")])
 
             with patch.dict(
@@ -165,12 +218,11 @@ class TestReportScreen(unittest.TestCase):
 
             self.assertEqual(
                 original_report.read_text(encoding="utf-8"),
-                "Existing report must remain untouched.\n",
+                original_contents,
             )
 
             saved_report = (
-                config_dir
-                / f"jws_diagnostic_report_{timestamp}_1.txt"
+                config_dir / f"jws_diagnostic_report_{timestamp}_1.txt"
             )
             self.assertTrue(saved_report.is_file())
             self.assertEqual(
@@ -180,56 +232,64 @@ class TestReportScreen(unittest.TestCase):
 
 
 class TestCoreReportReadOnly(unittest.TestCase):
-    def test_report_mode_does_not_create_or_modify_config_files(self):
+    def test_real_report_does_not_modify_config_or_create_dashboard(self):
         with tempfile.TemporaryDirectory() as temporary:
             config_dir = Path(temporary)
-            printer_cfg = config_dir / "printer.cfg"
-            printer_cfg.write_text(
-                "# minimal test configuration\n",
+            (config_dir / "printer.cfg").write_text(
+                "[mcu]\nserial: /dev/null\n",
                 encoding="utf-8",
             )
+            dashboard = config_dir / "jwt_macro_manager.conf"
+            before = snapshot_files(config_dir)
+
+            result, stdout, stderr = run_report_cli(
+                "--report",
+                "--config-dir",
+                str(config_dir),
+            )
+
+            self.assertEqual(result, 0, stderr)
+            self.assertIn("(REPORT)", stdout)
+            self.assertIn("Files in active tree:", stdout)
+            self.assertEqual(snapshot_files(config_dir), before)
+            self.assertFalse(dashboard.exists())
+
+    def test_missing_printer_cfg_is_reported_instead_of_aborting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config_dir = Path(temporary)
+
+            # A directory with the dashboard's name simulates an unusable
+            # dashboard path. Report mode must not try to load or repair it.
+            dashboard_path = config_dir / "jwt_macro_manager.conf"
+            dashboard_path.mkdir()
 
             before = snapshot_files(config_dir)
 
-            # Isolate the report-mode control flow from parser/analyzer details.
-            inventory = SimpleNamespace(
-                live_files=lambda: [],
-                macros={},
-                hardware={},
+            result, stdout, stderr = run_report_cli(
+                "--report",
+                "--config-dir",
+                str(config_dir),
             )
 
-            stdout = io.StringIO()
-            stderr = io.StringIO()
-
-            with patch.object(
-                jws_core,
-                "build_inventory",
-                return_value=inventory,
-            ):
-                with patch.object(jws_core, "run_all", return_value=[]):
-                    with patch.object(
-                        jws_core,
-                        "_findings_text",
-                        return_value="",
-                    ):
-                        with contextlib.redirect_stdout(stdout):
-                            with contextlib.redirect_stderr(stderr):
-                                result = jws_core.main(
-                                    [
-                                        "--report",
-                                        "--config-dir",
-                                        str(config_dir),
-                                    ]
-                                )
-
-            self.assertEqual(result, 0, stderr.getvalue())
-            self.assertIn("REPORT", stdout.getvalue())
+            self.assertEqual(result, 0, stderr)
+            self.assertIn("(REPORT)", stdout)
+            self.assertIn("printer.cfg was not found", stdout)
+            self.assertTrue(dashboard_path.is_dir())
             self.assertEqual(snapshot_files(config_dir), before)
 
-            # A missing dashboard must remain missing after a report run.
-            self.assertFalse(
-                (config_dir / "jwt_macro_manager.conf").exists()
+    def test_normal_mode_still_errors_when_printer_cfg_is_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config_dir = Path(temporary)
+
+            result, stdout, stderr = run_report_cli(
+                "--config-dir",
+                str(config_dir),
             )
+
+            self.assertEqual(result, 1)
+            self.assertIn("Master target config missing", stderr)
+            self.assertNotIn("(REPORT)", stdout)
+            self.assertEqual(snapshot_files(config_dir), {})
 
 
 if __name__ == "__main__":
