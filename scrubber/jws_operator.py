@@ -42,32 +42,41 @@ def apply_in_place_masking(file_path: Path, toggle_manifest: dict, target_type: 
         output_lines = []
 
         if target_type == "file":
+            seen_norm_targets = set()
             for line in lines:
-                # Use our comment-aware regex tool to parse lines whether active or muted
                 inc_match = INCLUDE_RE.match(line)
+                trailing_comment = ''
+                if line.find('#') != -1:
+                    trailing_comment = line[line.find('#'):]
                 
-                if inc_match and inc_match.group(1).lower().strip() == component_name.lower().strip():
-                    # Reconstruct the raw, clean include target block expression string
-                    clean_include_statement = f"[include {inc_match.group(1).strip()}]"
+                if inc_match:
+                    include_target = inc_match.group(1).strip()
+                    normalized_target = include_target.lower().replace("/", "_").replace("\\", "_").replace(" ", "_").replace("-", "_").replace(".", "_")
+                    # Detect ambiguous normalization: skip if duplicate in the same file
+                    if normalized_target in seen_norm_targets:
+                        # Ambiguity detected; leave the line unchanged and warn
+                        print(f"⚠️ Ambiguous include target '{include_target}' in {file_path}", file=sys.stderr)
+                        output_lines.append(line)
+                        continue
+                    seen_norm_targets.add(normalized_target)
                     
-                    if desired_state == 0:
-                        # Absolute Dashboard Rule: Target must be explicitly masked
-                        expected_line = f"{MASK_TAG}{clean_include_statement}"
-                        if line != expected_line:
-                            output_lines.append(expected_line)
-                            modified = True
+                    if normalized_target == component_name.lower().strip():
+                        clean_include_statement = f"[include {include_target}]"
+                        if desired_state == 0:
+                            expected_line = f"{MASK_TAG}{clean_include_statement}{trailing_comment}"
+                            if line != expected_line:
+                                output_lines.append(expected_line)
+                                modified = True
+                            else:
+                                output_lines.append(line)
                         else:
-                            output_lines.append(line)
-                    else:
-                        # Absolute Dashboard Rule: Target must be explicitly active and stripped of comments
-                        expected_line = clean_include_statement
-                        if line != expected_line:
-                            output_lines.append(expected_line)
+                            expected_line = f"{clean_include_statement}{trailing_comment}"
+                            if line != expected_line:
+                                output_lines.append(expected_line)
                             modified = True
-                        else:
-                            output_lines.append(line)
-                else:
-                    output_lines.append(line)
+                        continue
+                # No match or not the target; preserve the line as‑is
+                output_lines.append(line)
                     
         elif target_type == "macro":
             in_target_macro = False

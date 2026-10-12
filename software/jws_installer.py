@@ -1,18 +1,27 @@
 # =====================================================================
 # JABBERWOCKY APPS — SYSTEM COMPILE, CONFIG SCANNER & INTEGRATION ENGINE
-# VERSION: 5.7.5 [Quarantine Interface and Sweeper Engine Fully United]
-# Location: software/jws_installer.py (Chunk 1 of 3)
+# VERSION: 5.9.0 [Include-Tree Inventory, Adoption, Restart-Triggered Sync]
+# Location: software/jws_installer.py
 # =====================================================================
 import os
 import sys
 import shutil
+import shlex
 import re
 import time
 from pathlib import Path
 
-VERSION_STRING = "v5.7.5"
+VERSION_STRING = "v5.9.0"
 CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_SCRIPT_DIR, ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from scrubber.macro_manager import MacroManager, normalize_component_key
+from scrubber.jws_observer import build_inventory
+from scrubber.jws_operator import apply_in_place_masking
+from scrubber.jws_analyzers import run_all
+from scrubber.jws_dashboard import StateBook, plan_adoption, render
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, "printer_data", "config")
@@ -24,214 +33,196 @@ MANAGER_PATH = os.path.join(CONFIG_DIR, "jwt_macro_manager.conf")
 HARDWARE_CFG_PATH = os.path.join(TARGET_DIST_DIR, "jwt_hardware.cfg")
 QUARANTINE_DIR = os.path.join(CONFIG_DIR, "jabberwocky_quarantine")
 
-try:
-    from scrubber.jws_observer import scan
-    from scrubber.jws_operator import apply_in_place_masking
-except ImportError:
-    scan = None
-    apply_in_place_masking = None
+SHELL_EXT_URL = "https://raw.githubusercontent.com/dw-0/kiauh/master/kiauh/extensions/gcode_shell_cmd/assets/gcode_shell_command.py"
+BRIDGE_FILE = "jwt_sync_bridge.cfg"
+INSTALL_NOTES = []  # shown by the curses UI; printing would corrupt the screen
+LAST_SUMMARY = {}   # counts from the last run, shown by the curses UI
 
-def run_installation_pipeline():
-    """Executes deep tree scanning, configuration backups, adaptive fallback, and path injections."""
-    if os.path.exists(PRINTER_CFG):
-        date_stub = time.strftime("%Y%m%d_%H%M%S")
-        backup_target = os.path.join(CONFIG_DIR, f"printer_{date_stub}.bak")
-        shutil.copy2(PRINTER_CFG, backup_target)
 
-    os.makedirs(TARGET_DIST_DIR, exist_ok=True)
-    os.makedirs(QUARANTINE_DIR, exist_ok=True)
+def _noop(stage, message=""):
+    return None
 
-    discovered_macros = {}
-    all_config_files = set()
-    macro_counts_map = {}
-    extruder_blocks = 0
-    tmc_blocks = 0
-    is_generic_klipper = True
-    
-    run_current = "0.55"
-    stealthchop = "7.0"
-    rotation_dist = "35.13664"
 
-    for root, dirs, files in os.walk(CONFIG_DIR):
-        if any(p in root for p in ("jabberwocky_quarantine", "jabberwocky_trash", "jw_probe")):
+def _backup_files(paths, label):
+    """Copy files under quarantine/<label>/<relative path>. Returns the backup folder."""
+    dest_root = os.path.join(QUARANTINE_DIR, label)
+    for path in paths:
+        rel = os.path.relpath(os.path.realpath(path), os.path.realpath(CONFIG_DIR))
+        dest = os.path.join(dest_root, rel)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copy2(path, dest)
+    return dest_root
+
+
+def _adopt_plain_comments(inv, book, stamp):
+    """Turn the user's plain-# includes/macros (new to the dashboard) into managed, reversible masks."""
+    plan = plan_adoption(inv, book)
+    if not plan:
+        return 0
+    _backup_files(sorted({entry[0] for entry in plan}), f"adopt_backup_{stamp}")
+    adopted = 0
+    for file_path, target_type, name, scope in plan:
+        manifest = {normalize_component_key(target_type, name, scope): 0}
+        if apply_in_place_masking(Path(file_path), manifest, target_type, name, scope,
+                                  config_dir=Path(CONFIG_DIR).resolve(), adopt_only=True):
+            adopted += 1
+    return adopted
+
+
+def _sweep(inv, findings, stamp, keep):
+    """Guarded one-shot cleanup: MOVE (never delete) backups and complete orphans into quarantine."""
+    targets = [p for p in inv.backups if os.path.realpath(p) not in keep]
+    for f in findings:
+        if f.code == "FILE_ORPHAN":
+            targets.extend(os.path.join(CONFIG_DIR, rel) for rel in f.files)
+    moved = 0
+    for path in targets:
+        if not os.path.isfile(path):
             continue
-        for file in files:
-            if file.endswith((".cfg", ".conf")) and file != "jwt_macro_manager.conf":
-                all_config_files.add(file)
-                file_path = os.path.join(root, file)
-                try:
-                    with open(file_path, "r", errors="ignore") as f:
-                        content = f.read()
-                        if "nhk:" in content or "jwt_" in file or "jwprobe" in content:
-                            is_generic_klipper = False
-                            
-                        macro_matches = re.findall(r"^\s*\[gcode_macro\s+([^\]]+)\]", content, re.M | re.I)
-                        if macro_matches:
-                            clean_macros = [m.strip() for m in macro_matches]
-                            if file in discovered_macros: discovered_macros[file].extend(clean_macros)
-                            else: discovered_macros[file] = clean_macros
-                            for m_token in clean_macros:
-                                m_lower = m_token.lower()
-                                macro_counts_map[m_lower] = macro_counts_map.get(m_lower, 0) + 1
+        dest = os.path.join(QUARANTINE_DIR, f"sweep_{stamp}", os.path.relpath(os.path.realpath(path), os.path.realpath(CONFIG_DIR)))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.move(path, dest)
+        moved += 1
+    return moved
 
-                        if re.search(r"^\s*\[extruder\]", content, re.M | re.I):
-                            extruder_blocks += 1
-                            curr_match = re.search(r"^\s*run_current\s*:\s*(\S+)", content, re.M | re.I)
-                            if curr_match: run_current = curr_match.group(1)
-                            sc_match = re.search(r"^\s*stealthchop_threshold\s*:\s*(\S+)", content, re.M | re.I)
-                            if sc_match: stealthchop = sc_match.group(1)
-                            rot_match = re.search(r"^\s*rotation_distance\s*:\s*(\S+)", content, re.M | re.I)
-                            if rot_match: rotation_dist = rot_match.group(1)
-                            
-                        if re.search(r"^\s*\[tmc2209\s+extruder\]", content, re.M | re.I): tmc_blocks += 1
-                except Exception: pass
 
-    compressed_catalog = {f: macs for f, macs in discovered_macros.items()}
-    _write_hardware_and_manager(is_generic_klipper, compressed_catalog, all_config_files, extruder_blocks, tmc_blocks, run_current, stealthchop, rotation_dist, macro_counts_map)
-    return _inject_and_link()
-# =====================================================================
-# JABBERWOCKY APPS — SYSTEM COMPILE, CONFIG SCANNER & INTEGRATION ENGINE
-# Location: software/jws_installer.py (Chunk 2 of 3 - Tree Restructured)
-# =====================================================================
+def _extruder_metrics(inv):
+    metrics = {"run_current": "0.55", "stealthchop": "7.0", "rotation_dist": "35.13664"}
+    patterns = {
+        "run_current": r"^\s*run_current\s*:\s*(\S+)",
+        "stealthchop": r"^\s*stealthchop_threshold\s*:\s*(\S+)",
+        "rotation_dist": r"^\s*rotation_distance\s*:\s*(\S+)",
+    }
+    for path, text in inv.texts.items():
+        if re.search(r"^\s*\[extruder\]", text, re.M | re.I):
+            for key, pat in patterns.items():
+                hit = re.search(pat, text, re.M | re.I)
+                if hit:
+                    metrics[key] = hit.group(1)
+    return metrics
 
-def _write_hardware_and_manager(is_generic_klipper, discovered_macros, all_config_files, extruder_blocks, tmc_blocks, run_current, stealthchop, rotation_dist, macro_counts_map):
-    try:
-        with open(HARDWARE_CFG_PATH, "w") as hw:
-            hw.write("# =====================================================================\n# JABBERWOCKY ASC — AUTOMATED EXTRUDER PREFLIGHT CONFIGURATION TUNING\n# =====================================================================\n\n[gcode_macro _ASC_SETUP_VARIABLES]\n")
-            hw.write(f"variable_asc_hardware_run_current : {run_current}\nvariable_asc_stealthchop_threshold : {stealthchop}\nvariable_asc_rotation_distance    : {rotation_dist}\ngcode:\n    M118 Active toolhead hardware bounds successfully loaded.\n")
-    except Exception: pass
 
-    # Read dashboard panel toggle switches directly from the .conf file to check quarantine state
-    quarantine_action_active = 0
+def _is_generic(inv):
+    for path, text in inv.texts.items():
+        if "nhk:" in text or "jwt_" in os.path.basename(path) or "jwprobe" in text:
+            return False
+    return True
+
+
+def run_installation_pipeline(progress=None):
+    """Scan the include tree, adopt user comments, write the dashboard and report, wire the sync bridge."""
+    step = progress or _noop
+    del INSTALL_NOTES[:]
+    LAST_SUMMARY.clear()
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+
+    step("backup", "Saving a safety copy of printer.cfg")
+    backup_target = None
+    if os.path.exists(PRINTER_CFG):
+        backup_target = os.path.join(CONFIG_DIR, f"printer_{stamp}.bak")
+        shutil.copy2(PRINTER_CFG, backup_target)
+    os.makedirs(TARGET_DIST_DIR, exist_ok=True)
+
+    step("scan", "Reading printer.cfg and following every [include] the way Klipper does")
+    config_dir = Path(CONFIG_DIR)
+    inv = build_inventory(Path(PRINTER_CFG), config_dir)
+    existing = MacroManager(Path(MANAGER_PATH))
+    book = StateBook(existing)
+
+    step("adopt", "Looking for entries you already switched off with a # symbol")
+    adopted = _adopt_plain_comments(inv, book, stamp)
+    if adopted:
+        inv = build_inventory(Path(PRINTER_CFG), config_dir)
+
+    swept = 0
+    sweep_key = normalize_component_key("action", "SWEEP TO QUARANTINE")
+    if existing.states.get(sweep_key) == 1:
+        step("sweep", "Moving backup and unused files into jabberwocky_quarantine (nothing is deleted)")
+        swept = _sweep(inv, run_all(inv), stamp, {os.path.realpath(backup_target)} if backup_target else set())
+        book.forced[sweep_key] = 0
+        if swept:
+            inv = build_inventory(Path(PRINTER_CFG), config_dir)
+
+    step("analyze", "Checking for conflicts, duplicates, orphans and problems that stop Klipper")
+    findings = run_all(inv)
+
+    step("write", "Writing the dashboard and the pre-flight report")
+    metrics = _extruder_metrics(inv)
+    _write_hardware_cfg(metrics)
+    existing_lines = []
     if os.path.isfile(MANAGER_PATH):
-        try:
-            with open(MANAGER_PATH, "r", errors="ignore") as f:
-                for line in f.read().splitlines():
-                    if "⚙️ SYSTEM ACTION: SWEEP TO QUARANTINE" in line:
-                        val_match = re.search(r"\[\s*()\s*\]", line)
-                        if val_match: quarantine_action_active = int(val_match.group(1).strip())
-        except Exception: pass
+        with open(MANAGER_PATH, "r", encoding="utf-8", errors="ignore") as fh:
+            existing_lines = fh.read().splitlines(True)
+    env_mode = "GENERIC STANDALONE" if _is_generic(inv) else "ACTIVE EXPERIMENTAL"
+    text, summary = render(inv, findings, book, VERSION_STRING, env_mode, metrics, existing_lines, swept)
+    tmp_path = MANAGER_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp_path, MANAGER_PATH)
 
-    # 🧹 AUTONOMOUS QUARANTINE SECTOR: Execute sweeps if toggle flag is explicitly set to 1
-    quarantined_count = 0
-    if quarantine_action_active == 1:
-        try:
-            for item in os.listdir(CONFIG_DIR):
-                item_path = os.path.join(CONFIG_DIR, item)
-                if os.path.isfile(item_path):
-                    if item.endswith(".bak"):
-                        shutil.move(item_path, os.path.join(QUARANTINE_DIR, item))
-                        quarantined_count += 1
-                    elif item.endswith((".cfg", ".conf")) and item not in all_config_files and item not in ("jwt_macro_manager.conf", "printer.cfg"):
-                        shutil.move(item_path, os.path.join(QUARANTINE_DIR, item))
-                        quarantined_count += 1
-        except Exception: pass
+    summary["adopted"] = adopted
+    LAST_SUMMARY.update(summary)
 
+    step("link", "Connecting the dashboard to Klipper and installing the sync button")
+    return _inject_and_link()
+
+
+def _write_hardware_cfg(metrics):
+    """Create the hardware baseline once; an existing file is never overwritten."""
+    if os.path.exists(HARDWARE_CFG_PATH):
+        return
     try:
-        lbl_open, lbl_close = chr(91), chr(93)
-        env_mode = "GENERIC STANDALONE" if is_generic_klipper else "ACTIVE EXPERIMENTAL"
-        
-        header_block = f"""=====================================================================
-JABBERWOCKY APPS ECOSYSTEM — UNIVERSAL EXTENSION & MACRO STATE MANAGER
-Location: ~/printer_data/config/jwt_macro_manager.conf
-RUNTIME ENGINE VERSION: {VERSION_STRING} [{env_mode}]
-=====================================================================
-💡 NOVICE USER INSTRUCTION GUIDE:
-  To change the state of an include file or macro layout component:
-  1. Make your adjustments directly inside SECTION 1 below.
-  2. Change the value inside the checkbox brackets to 1 (ON) or 0 (OFF).
-  3. Look for status indicators above: {lbl_open}D!{lbl_close} Active Override, {lbl_open}D?{lbl_close} Overwritten.
-  4. Save the file and execute a FIRMWARE_RESTART to apply your updates!
-=====================================================================
+        with open(HARDWARE_CFG_PATH, "x") as hw:
+            hw.write("# =====================================================================\n# JABBERWOCKY ASC — AUTOMATED EXTRUDER PREFLIGHT CONFIGURATION TUNING\n# =====================================================================\n\n[gcode_macro _ASC_SETUP_VARIABLES]\n")
+            hw.write(f"variable_asc_hardware_run_current : {metrics['run_current']}\nvariable_asc_stealthchop_threshold : {metrics['stealthchop']}\nvariable_asc_rotation_distance    : {metrics['rotation_dist']}\ngcode:\n    M118 Active toolhead hardware bounds successfully loaded.\n")
+    except OSError as exc:
+        if not os.path.exists(HARDWARE_CFG_PATH):
+            raise RuntimeError(f"Unable to create hardware configuration {HARDWARE_CFG_PATH}: {exc}") from exc
 
-═════════════════════════════════════════════════════════════════════
- SECTION 1: INTERACTIVE EXTENSION DASHBOARD PANEL (VISUAL COLUMN GRID)
-═════════════════════════════════════════════════════════════════════
 
-{lbl_open} 1 {lbl_close} ⚙️ SYSTEM ACTION: SNAPSHOT BACKUP
-{lbl_open} 1 {lbl_close} ⚙️ SYSTEM ACTION: SNAPSHOT RESTORE
-{lbl_open} {quarantine_action_active} {lbl_close} ⚙️ SYSTEM ACTION: SWEEP TO QUARANTINE
+def _klipper_extras_dir():
+    base = os.environ.get("JWS_KLIPPER_DIR") or os.path.expanduser("~/klipper")
+    return os.path.join(base, "klippy", "extras")
 
-"""
-        conflict_origins = {}
-        for filename in sorted(discovered_macros.keys()):
-            for m in discovered_macros[filename]:
-                m_low = m.lower()
-                if macro_counts_map.get(m_low, 0) > 1:
-                    if m_low not in conflict_origins: conflict_origins[m_low] = []
-                    if filename not in conflict_origins[m_low]: conflict_origins[m_low].append(filename)
 
-        def _render_file_tree_block(f_name, macros):
-            # Header is now cleanly represented by the actual source file name
-            block_txt = f"📂 EXTENSION SOURCE: {f_name.upper()}\n{lbl_open} 1 {lbl_close} 📂 {f_name.upper()} (MASTER INCLUDE MAP)\n"
-            
-            macro_iterable = [macros] if isinstance(macros, str) else macros
-            for mac in sorted(set(macro_iterable)):
-                mac_clean = mac.lower()
-                if macro_counts_map.get(mac_clean, 1) > 1:
-                    file_list = conflict_origins.get(mac_clean, [])
-                    others = [orig for orig in file_list if orig != f_name]
-                    if len(file_list) > 1:
-                        if f_name == file_list[-1]:
-                            badge = f"{lbl_open}D!{lbl_close} "
-                            conflict_txt = f" (🚀 ACTIVE RUNTIME OVERRIDE — Conflicts with: {', '.join(others)})"
-                        else:
-                            badge = f"{lbl_open}D?{lbl_close} "
-                            conflict_txt = f" (🛑 OVERWRITTEN/INACTIVE — Active target resides in: {file_list[-1]})"
-                    else:
-                        badge = f"{lbl_open}D?{lbl_close} "
-                        conflict_txt = " (🛑 INTERNAL DUPLICATE CLONE — Dead entries inside file)"
-                    block_txt += f"  ├── {lbl_open} 1 {lbl_close} ▶ {badge}{mac.upper()}{conflict_txt}\n"
-                else:
-                    block_txt += f"  ├── {lbl_open} 1 {lbl_close} ▶ {mac.upper()}\n"
-            return block_txt + "\n"
+def _ensure_shell_command_extension():
+    """Return True if Klipper has gcode_shell_command; install it from KIAUH if absent."""
+    extras = _klipper_extras_dir()
+    target = os.path.join(extras, "gcode_shell_command.py")
+    if os.path.isfile(target):
+        return True
+    if not os.path.isdir(extras):
+        INSTALL_NOTES.append(f"Klipper extras not found at {extras}; set JWS_KLIPPER_DIR. Sync button NOT installed.")
+        return False
+    try:
+        import urllib.request
+        with urllib.request.urlopen(SHELL_EXT_URL, timeout=15) as resp:
+            code = resp.read().decode("utf-8")
+        if "load_config_prefix" not in code:
+            raise ValueError("unexpected extension content")
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(code)
+        INSTALL_NOTES.append(f"Installed gcode_shell_command extension to {target}")
+        return True
+    except Exception as exc:
+        INSTALL_NOTES.append(f"Could not install gcode_shell_command ({exc}). Install it via KIAUH; sync button NOT installed.")
+        return False
 
-        system_essentials_str = "═════════════════════════════════════════════════════════════════════\n ⚙️ TIER 1: SYSTEM ESSENTIALS (PHYSICAL HARDWARE & REQUIRED CORES)\n═════════════════════════════════════════════════════════════════════\n"
-        operational_essentials_str = "═════════════════════════════════════════════════════════════════════\n 📋 TIER 2: OPERATIONAL ESSENTIALS (DASHBOARD UI INTERFACES & UTILITIES)\n═════════════════════════════════════════════════════════════════════\n"
-        general_definitions_str = "═════════════════════════════════════════════════════════════════════\n 📂 TIER 3: GENERAL DEFINITIONS (USER MACROS & OPTIONAL MODULES)\n═════════════════════════════════════════════════════════════════════\n"
 
-        for f_name, macros in sorted(discovered_macros.items()):
-            rendered_block = _render_file_tree_block(f_name, macros)
-            f_low = f_name.lower()
-            
-            if f_low in ("printer.cfg", "nitehawk-36.cfg", "jwt_hardware.cfg", "jwt_clutch_logic.cfg"):
-                system_essentials_str += rendered_block
-            elif "mainsail" in f_low or "fluidd" in f_low or "timelapse" in f_low:
-                operational_essentials_str += rendered_block
-            else:
-                general_definitions_str += rendered_block
+def _render_sync_bridge():
+    src = os.path.join(REPO_ROOT, "jabberwocky_dist", BRIDGE_FILE)
+    with open(src, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    for key, value in {
+        "__JWS_CONFIG_DIR__": shlex.quote(CONFIG_DIR),
+        "__JWS_PYTHON__": shlex.quote(sys.executable or "python3"),
+        "__JWS_CORE_PATH__": shlex.quote(os.path.join(REPO_ROOT, "scrubber", "jws_core.py")),
+        "__JWS_MOONRAKER_PORT__": re.sub(r"\D", "", os.environ.get("JWS_MOONRAKER_PORT", "7125")) or "7125",
+    }.items():
+        text = text.replace(key, value)
+    with open(os.path.join(TARGET_DIST_DIR, BRIDGE_FILE), "w", encoding="utf-8") as fh:
+        fh.write(text)
 
-# =====================================================================
-# JABBERWOCKY APPS — SYSTEM COMPILE, CONFIG SCANNER & INTEGRATION ENGINE
-# Location: software/jws_installer.py (Chunk 3 of 3)
-# =====================================================================
-        total_macros = sum(len(set(v)) for v in discovered_macros.values())
-        report_str = f"""═════════════════════════════════════════════════════════════════════\n SECTION 2: FOUR-TIER COMPREHENSIVE RECURSIVE PRE-FLIGHT SCRUBBER REPORT\n═════════════════════════════════════════════════════════════════════\n🔍 SYSTEM INTEGRITY PROFILE SUMMARY:\n  • Total Active Macros Discovered : {total_macros} Mappings\n  • Target Extruder Hardware Blocks: Clear (Ecosystem priorities aligned)\n\n🚨 {lbl_open}!{lbl_close} [BLOCKERS] — CRITICAL STARTUP THREATS:\n  ➔ Status: Clear. No overlapping hardware block pin conflicts detected.\n\n⚠️ {lbl_open}Δ{lbl_close} [WARNINGS] — ECOSYSTEM CONFLICTS & OVERLAY PRIORITIES:\n"""
-        if extruder_blocks > 1:
-            report_str += f"  ℹ️  HARDWARE OVERLAY: {extruder_blocks} [extruder] configuration blocks detected. Last file parsed takes system priority.\n"
-        if tmc_blocks > 1:
-            report_str += f"  ℹ️  HARDWARE OVERLAY: {tmc_blocks} [tmc2209 extruder] stepper driver configurations active.\n"
-            
-        collisions = tuple(k for k, v in macro_counts_map.items() if v > 1)
-        if collisions:
-            for item in collisions:
-                file_list = conflict_origins.get(item, [])
-                report_str += f"  👉 MACRO OVERWRITE OVERLAY: Token '{item}' parsed across: {', '.join(file_list)} ➔ Live: {file_list[-1]}\n"
-        else:
-            report_str += "  ➔ Status: Clear. Conflicting macro overwrite paths have been safely isolated.\n"
-
-        report_str += f"\n🧹 {lbl_open}O{lbl_close} [ORPHANS & BACKUPS] — STORAGE REDUNDANCY ANALYSIS:\n"
-        rem_bak = sum(1 for f in os.listdir(CONFIG_DIR) if f.endswith(".bak"))
-        if rem_bak > 0:
-            report_str += f"  ⚠️  STORAGE VOLATILITY ALARM: {rem_bak} historical backup files detected on drive!\n"
-        else:
-            report_str += f"  ➔ Status: Clear. Every local file asset is cleanly organized. (Swept {quarantined_count} files to quarantine zone)\n"
-
-        report_str += f"\n🧪 {lbl_open}💤{lbl_close} [DIAGNOSTICS] — ACTIVE HARDWARE CHARACTERIZATION CHARACTERISTICS:\n  • Current Stepper Driver Current Baseline  : {run_current} Amps\n  • Current StealthChop Threshold Condition  : {stealthchop}\n  • Current Extruder Rotation Distance Math  : {rotation_dist} mm\n  ➔ Status: Telemetry streaming aligned. Ready for physical torque characterization loops.\n"
-        
-        sections_combined = "\n" + system_essentials_str + operational_essentials_str + general_definitions_str
-        with open(MANAGER_PATH, "w") as m: m.write(header_block + sections_combined + report_str)
-    except Exception: pass
 
 def _inject_and_link():
     legal_includes = ("jwt_clutch_logic.cfg", "jwt_factory_blueprints.cfg", "macromanager.cfg")
@@ -240,14 +231,28 @@ def _inject_and_link():
         for file in os.listdir(source_dist):
             if file in legal_includes:
                 shutil.copy2(os.path.join(source_dist, file), os.path.join(TARGET_DIST_DIR, file))
+    bridge_ready = False
+    bridge_path = os.path.join(TARGET_DIST_DIR, BRIDGE_FILE)
+    if os.path.isfile(os.path.join(source_dist, BRIDGE_FILE)) and _ensure_shell_command_extension():
+        _render_sync_bridge()
+        bridge_ready = True
+        INSTALL_NOTES.append("Sync button installed: run JABBERWOCKY_SYNC_NOW in the Mainsail console.")
+    elif os.path.isfile(bridge_path):
+        os.remove(bridge_path)
     try:
-        with open(PRINTER_CFG, "r") as f: lines = f.readlines()
-        filtered_lines = [l for l in lines if "jwt_clutch_logic.cfg" not in l and "jwt_macro_proxies.cfg" not in l and "Jabberwocky-APPS" not in l]
+        with open(PRINTER_CFG, "r") as f: original = f.read()
+        banner = r"\n?# =+\n# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION[^\n]*\n# =+\n"
+        lines = re.sub(banner, "\n", original).splitlines(True)
+        filtered_lines = [l for l in lines if "jwt_clutch_logic.cfg" not in l and BRIDGE_FILE not in l and "jwt_macro_proxies.cfg" not in l and "Jabberwocky-APPS" not in l]
         save_config_idx = next((i for i, line in enumerate(filtered_lines) if "SAVE_CONFIG" in line), -1)
-        include_block = "\n# =====================================================================\n# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION (v5.7.5)\n# =====================================================================\n[include jabberwocky_dist/jwt_clutch_logic.cfg]\n\n"
+        include_block = f"\n# =====================================================================\n# JABBERWOCKY ASYNCHRONOUS PRINT PROTECTION SUITE INTEGRATION ({VERSION_STRING})\n# =====================================================================\n[include jabberwocky_dist/jwt_clutch_logic.cfg]\n"
+        if bridge_ready:
+            include_block += f"[include jabberwocky_dist/{BRIDGE_FILE}]\n"
+        include_block += "\n"
         if save_config_idx != -1: filtered_lines.insert(save_config_idx, include_block)
         else: filtered_lines.append(include_block)
         with open(PRINTER_CFG, "w") as f: f.writelines(filtered_lines)
-    except Exception: pass
+    except OSError as exc:
+        INSTALL_NOTES.append(f"Could not update printer.cfg: {exc}")
     return True
 #EOF

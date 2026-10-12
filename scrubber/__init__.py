@@ -1,6 +1,6 @@
 # =====================================================================
 # JWS V3.0 SYSTEM ARCHITECTURE PACKAGE INITIALIZATION ANCHOR (__init__.py)
-# VERSION: 3.0.0
+# VERSION: 5.9.0
 # =====================================================================
 #!/usr/bin/env python3
 """Jabberwocky Scrubber (JWS v3.0) Package Initialization Anchor.

@@ -89,57 +89,40 @@ def main():
         detected_files = [Path(f).name for f in registry_map.get("files", {}).keys()]
         print(f"  • Scanner Tree Files : {detected_files}")
         print("===================================================================\n")
-        
+
         modified_count = 0
-        
+
         for target_key, desired_state in toggle_manifest.items():
             if not target_key.startswith("file_"):
                 continue
-            
+
             key_parts = target_key.split("file_", 1)
             if len(key_parts) < 2:
                 continue
-            
+
             raw_target_name = key_parts[1]
-            
+
             if raw_target_name.endswith("_cfg"):
                 raw_target_name = raw_target_name[:-4] + ".cfg"
             elif raw_target_name.endswith("_conf"):
                 raw_target_name = raw_target_name[:-5] + ".conf"
-            
+
             for f_path in list(registry_map["files"].keys()):
                 p_obj = Path(f_path)
                 was_modified = apply_in_place_masking(p_obj, simplified_map, "file", raw_target_name.lower())
-                if was_modified: 
+                if was_modified:
                     modified_count += 1
 
             for f_path in list(registry_map["files"].keys()):
                 p_obj = Path(f_path)
                 for mac in registry_map["files"][f_path]["macros"]:
                     m_mod = apply_in_place_masking(p_obj, simplified_map, "macro", mac.lower())
-                    if m_mod: 
+                    if m_mod:
                         modified_count += 1
 
         print(f"✅ Sync Pass complete. Handled masking shifts across {modified_count} items.")
-        
-        # 🏛️ INTER-MODULE BRIDGE INJECTION: Chain-load sweeper loops without altering core code lines
-        try:
-            SOFTWARE_DIR = os.path.join(REPO_ROOT, "software")
-            if SOFTWARE_DIR not in sys.path:
-                sys.path.insert(0, SOFTWARE_DIR)
-            import jws_installer
-            print("🧹 JWS: Triggering autonomous storage sweep pass routines...")
-            jws_installer._write_hardware_and_manager(
-                is_generic_klipper=False, 
-                discovered_macros=registry_map.get("macros", {}), 
-                all_config_files=set(detected_files), 
-                extruder_blocks=1, tmc_blocks=1, 
-                run_current="1.1", stealthchop="1", rotation_dist="32", 
-                macro_counts_map={}
-            )
-        except Exception as e:
-            print(f"⚠️ Storage sweeper handoff link bypassed: {e}", file=sys.stderr)
-            
+
+        # Installer side effects removed; will be executed via installer pipeline.
     else:
         print("===================================================================\n")
 

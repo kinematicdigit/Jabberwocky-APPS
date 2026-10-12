@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =====================================================================
 # JABBERWOCKY APPS — UNIFIED SYSTEM ENVIRONMENT ENTRY OPERATOR
-# VERSION: 4.5.0 [Absolute Entry Anchor]
+# VERSION: 5.9.0 [Absolute Entry Anchor]
 # Location: install.sh (Absolute Repository Root Anchor)
 # =====================================================================
 set -e
@@ -11,7 +11,7 @@ SRCDIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
 clear
 echo "====================================================================="
 echo "🐉 JABBERWOCKY APPS: INITIALIZING ECOSYSTEM INTEGRATION"
-echo "   CORE ENGINE RUNTIME: v4.5.0"
+echo "   CORE ENGINE RUNTIME: v5.9.0"
 echo "====================================================================="
 
 if [ -d "${SRCDIR}/software" ]; then

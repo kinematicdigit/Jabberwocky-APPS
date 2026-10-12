@@ -1,105 +1,239 @@
 # =====================================================================
-# JWS V5.2 RECURSIVE TREE CRAWLER AND PARSER OBSERVER (jws_observer.py)
-# VERSION: 5.2.1 [Orphan Differentiation & Comment-Gate Aware Deployed]
+# JWS RECURSIVE TREE CRAWLER AND INVENTORY OBSERVER (jws_observer.py)
+# VERSION: 5.9.0 [Klipper-Order Inventory Crawler]
 # Location: scrubber/jws_observer.py
 # =====================================================================
 #!/usr/bin/env python3
-"""Jabberwocky Scrubber (JWS v5.0) Passive Read-Only Tree Crawler."""
+"""Passive, read-only crawler.
+
+``build_inventory`` walks the include tree exactly the way Klipper loads it
+(includes resolve relative to the including file, expanded in place, in text
+order) and records every include, macro and hardware block together with its
+state: ``active``, ``masked`` (Jabberwocky ``#💤#``) or ``commented`` (plain
+user ``#``).  Nothing here ever writes to disk.
+"""
 
 from __future__ import annotations
+
+import glob as _glob
 import os
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from .jws_utils import IncludeNode, INCLUDE_RE, MACRO_RE
+
+from .jws_utils import (
+    BACKUP_NAME_RE,
+    HARDWARE_RES,
+    MANAGED_DIR_NAMES,
+    MASK_TAG,
+    IncludeNode,
+)
+
+INCLUDE_LINE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<mask>#💤#|#+)?[ \t]*\[[ \t]*include[ \t]+(?P<target>[^\]\s]+)[ \t]*\](?P<tail>.*)$",
+    re.I,
+)
+MACRO_LINE = re.compile(
+    r"^[ \t]*(?P<mask>#💤#|#+)?[ \t]*\[[ \t]*gcode_macro[ \t]+(?P<name>[^\]\s]+)[ \t]*\](?P<tail>.*)$",
+    re.I,
+)
+SECTION_HEADER = re.compile(r"^\[(?P<name>[^\]]+)\]")
+
+
+def _tail_is_comment(tail: str) -> bool:
+    stripped = tail.strip()
+    return not stripped or stripped[0] in "#;"
+
+
+@dataclass
+class IncludeRef:
+    parent: str
+    line_no: int
+    target: str
+    state: str  # active | masked | commented
+    resolved: list[str] = field(default_factory=list)
+    missing: bool = False
+    is_glob: bool = False
+
+
+@dataclass
+class MacroDef:
+    name: str
+    file: str
+    line_no: int
+    state: str  # active | masked | commented
+    order: int
+    live: bool
+
+
+@dataclass
+class HardwareBlock:
+    section: str
+    kind: str
+    owner: str
+    file: str
+    line_no: int
+    order: int
+    live: bool
+
+
+@dataclass
+class Inventory:
+    config_dir: Path
+    root_cfg: Path
+    files: dict[str, dict] = field(default_factory=dict)  # path -> {"live": bool}
+    texts: dict[str, str] = field(default_factory=dict)
+    includes: list[IncludeRef] = field(default_factory=list)
+    macros: list[MacroDef] = field(default_factory=list)
+    hardware: list[HardwareBlock] = field(default_factory=list)
+    physical: list[str] = field(default_factory=list)
+    backups: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def rel(self, path: str | Path) -> str:
+        """Dashboard identity of a file: path relative to the config dir, '/' separated."""
+        try:
+            return os.path.relpath(str(path), str(self.config_dir)).replace(os.sep, "/")
+        except ValueError:
+            return str(path)
+
+    def live_files(self) -> list[str]:
+        return [p for p, meta in self.files.items() if meta["live"]]
+
+
+def _resolve_include(parent: Path, target: str) -> tuple[list[str], bool, bool]:
+    """Return (existing files, is_glob, missing) following Klipper's include rules."""
+    spec = os.path.join(str(parent.parent), target)
+    is_glob = _glob.has_magic(spec)
+    matches = sorted(_glob.glob(spec))
+    resolved = [str(Path(m).resolve()) for m in matches if os.path.isfile(m)]
+    missing = not resolved and not is_glob
+    if missing:
+        resolved = [str(Path(os.path.normpath(spec)))]
+    return resolved, is_glob, missing
+
+
+def _discover_physical(config_dir: Path, inv: Inventory) -> None:
+    for root, dirs, names in os.walk(config_dir):
+        dirs[:] = sorted(d for d in dirs if d not in MANAGED_DIR_NAMES and not d.startswith("."))
+        for name in sorted(names):
+            if BACKUP_NAME_RE.search(name):
+                inv.backups.append(str(Path(root, name).resolve()))
+            elif name.endswith((".cfg", ".conf")):
+                inv.physical.append(str(Path(root, name).resolve()))
+
+
+def build_inventory(root_cfg: Path, config_dir: Path) -> Inventory:
+    config_dir = Path(config_dir).resolve()
+    root_cfg = Path(root_cfg).resolve()
+    inv = Inventory(config_dir=config_dir, root_cfg=root_cfg)
+    counter = [0]
+    visited: set[str] = set()
+
+    def crawl(path_str: str, live: bool, follow_states: tuple[str, ...], origin: str = "live") -> None:
+        if path_str in visited:
+            return
+        path = Path(path_str)
+        if not path.is_file():
+            return
+        visited.add(path_str)
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            inv.warnings.append(f"Could not open config resource target: {path.name}")
+            return
+        inv.files[path_str] = {"live": live, "origin": origin}
+        inv.texts[path_str] = text
+
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            inc = INCLUDE_LINE.match(line)
+            if inc:
+                mask = inc.group("mask")
+                if not mask:
+                    state = "active"
+                elif mask == MASK_TAG:
+                    state = "masked"
+                elif _tail_is_comment(inc.group("tail")):
+                    state = "commented"
+                else:
+                    continue  # prose such as "# [include x] some words" is user text
+                resolved, is_glob, missing = _resolve_include(path, inc.group("target"))
+                if live:
+                    inv.includes.append(
+                        IncludeRef(path_str, line_no, inc.group("target"), state, resolved, missing, is_glob)
+                    )
+                if state in follow_states and not missing:
+                    for child in resolved:
+                        crawl(child, live and state == "active", follow_states, origin)
+                continue
+
+            mac = MACRO_LINE.match(line)
+            if mac:
+                mask = mac.group("mask")
+                if not mask:
+                    state = "active"
+                elif mask == MASK_TAG:
+                    state = "masked"
+                elif _tail_is_comment(mac.group("tail")):
+                    state = "commented"
+                else:
+                    continue
+                counter[0] += 1
+                inv.macros.append(MacroDef(mac.group("name"), path_str, line_no, state, counter[0], live))
+                continue
+
+            header = SECTION_HEADER.match(line)
+            if header and live:
+                name = " ".join(header.group("name").split()).lower()
+                for regex, kind in HARDWARE_RES:
+                    hit = regex.match(name)
+                    if hit:
+                        counter[0] += 1
+                        owner = hit.groupdict().get("owner") or name
+                        inv.hardware.append(
+                            HardwareBlock(name, kind, owner, path_str, line_no, counter[0], True)
+                        )
+                        break
+
+    crawl(str(root_cfg), True, ("active",))
+    # Second pass: files reachable only through disarmed includes, so their rows stay manageable.
+    for ref in list(inv.includes):
+        if ref.state in ("masked", "commented") and not ref.missing:
+            for child in ref.resolved:
+                crawl(child, False, ("active", "masked", "commented"), ref.state)
+
+    _discover_physical(config_dir, inv)
+    return inv
+
 
 def scan(root_cfg: Path, config_dir: Path) -> tuple[IncludeNode, dict[str, dict], list[str]]:
-    """Crawls active configuration trees to identify macros, inclusions, and true orphans."""
-    config_dir = config_dir.resolve()
-    root_cfg = root_cfg.resolve()
-    visited_paths: set[Path] = set()
-    warnings_list: list[str] = []
-    
-    # Registry Map split strictly between tree tracked elements and structural system reports
-    registry_map: dict[str, dict] = {
-        "macros": {}, 
-        "files": {}, 
-        "orphaned_files": [], 
-        "orphaned_includes": []
-    }
+    """Backward-compatible registry view used by the sync loop and older callers."""
+    inv = build_inventory(root_cfg, config_dir)
+    registry_map: dict[str, dict] = {"macros": {}, "files": {}, "orphaned_files": [], "orphaned_includes": []}
+    for path, meta in inv.files.items():
+        if meta["origin"] != "commented":
+            registry_map["files"][path] = {"macros": []}
+    for macro in inv.macros:
+        if macro.state == "active" and macro.file in registry_map["files"]:
+            registry_map["files"][macro.file]["macros"].append(macro.name)
+            registry_map["macros"].setdefault(macro.name, macro.file)
+    for ref in inv.includes:
+        if ref.missing and ref.state == "active":
+            registry_map["orphaned_includes"].append(ref.resolved[0])
+    tracked = set(inv.files)  # commented-only targets are never orphans here
+    for path in inv.physical:
+        if path not in tracked and Path(path).name not in ("jwt_macro_manager.conf", "jwt_macro_manager.cfg"):
+            registry_map["orphaned_files"].append(path)
 
-    # Pass 1: Disk Discovery Pass - Scan physical root directory to map what actually exists
-    physical_disk_files = set()
-    try:
-        for entry in os.scandir(config_dir):
-            if entry.is_file() and entry.name.endswith(('.cfg', '.conf')):
-                physical_disk_files.add(Path(entry.path).resolve())
-    except Exception as e:
-        warnings_list.append(f"Directory scanner failure: {e}")
-
-    root_node = IncludeNode(str(root_cfg))
-    referenced_tree_paths = set()
-
-    # Pass 2: Tree Validation Pass - Recursively crawl down looking for active or muted includes
-    def _parse_file(current_path: Path, node: IncludeNode):
-        resolved = current_path.resolve()
-        if resolved in visited_paths: 
-            return
-        visited_paths.add(resolved)
-        referenced_tree_paths.add(resolved)
-        
-        # Check if include in tree is an Orphaned Include (referenced but missing from disk)
-        if resolved != root_cfg and not resolved.is_file():
-            if str(resolved) not in registry_map["orphaned_includes"]:
-                registry_map["orphaned_includes"].append(str(resolved))
-            return
-
-        try: 
-            content = resolved.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            warnings_list.append(f"Could not open config resource target: {current_path.name}")
-            return
-
-        registry_map["files"][str(resolved)] = {"macros": []}
-
-        for line in content.splitlines():
-            # Evaluate raw line to capture user-muted (#) and script-masked (#💤#) inclusions
-            inc_match = INCLUDE_RE.match(line)
-            if inc_match:
-                pattern = inc_match.group(1).strip()
-                if pattern.startswith("../"):
-                    target_path = (resolved.parent / pattern).resolve()
-                else:
-                    target_path = (config_dir / pattern).resolve()
-
-                child_node = IncludeNode(str(target_path), parent=node)
-                node.children.append(child_node)
-                _parse_file(target_path, child_node)
-                continue
-
-            # Strip comments for active macro section header discovery
-            no_hash = line.split("#", 1)[0]
-            no_semi = no_hash.split(";", 1)[0]
-            clean_line = no_semi.strip()
-            
-            if not clean_line: 
-                continue
-
-            mac_match = MACRO_RE.match(clean_line)
-            if mac_match:
-                macro_name = mac_match.group(1).strip()
-                registry_map["files"][str(resolved)]["macros"].append(macro_name)
-                if macro_name not in registry_map["macros"]:
-                    registry_map["macros"][macro_name] = str(resolved)
-
-    # Boot the crawler loop
-    _parse_file(root_cfg, root_node)
-
-    # Pass 3: Cross-Reference Orphan Analysis
-    # Physical files on disk that never appeared in our include string tree are true Orphans
-    for disk_path in physical_disk_files:
-        if disk_path not in referenced_tree_paths:
-            # Exclude our dashboard file itself from being reported as an orphan
-            if disk_path.name not in ("jwt_macro_manager.conf", "jwt_macro_manager.cfg"):
-                registry_map["orphaned_files"].append(str(disk_path))
-
-    return root_node, registry_map, warnings_list
+    root_node = IncludeNode(str(inv.root_cfg))
+    nodes = {str(inv.root_cfg): root_node}
+    for ref in inv.includes:
+        parent = nodes.get(ref.parent)
+        if parent is None:
+            continue
+        for child in ref.resolved:
+            node = IncludeNode(child, parent=parent)
+            parent.children.append(node)
+            nodes.setdefault(child, node)
+    return root_node, registry_map, inv.warnings
 #EOF
