@@ -1,6 +1,6 @@
 # =====================================================================
 # JABBERWOCKY APPS Suite — FRIENDLY SETUP SCREEN (curses)
-# VERSION: 5.9.0 [Plain-language menu, paced progress, honest verification]
+# VERSION: 5.9.1 [Plain-language menu, paced progress, honest verification]
 # Location: software/curses_ui.py
 # =====================================================================
 import os, sys, curses, time, textwrap
@@ -49,7 +49,7 @@ class JabberwockyTerminalUI:
             ),
         )
         self.selections = [True, False, False, False]
-        self.version_string = "v5.9.0"
+        self.version_string = "v5.9.1"
         self.stage_lines = []
         self._scr = None
 
