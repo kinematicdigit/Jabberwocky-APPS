@@ -169,7 +169,48 @@ class TestReportScreen(unittest.TestCase):
                 text for _y, _x, text, _attr in screen.drawn_text
             )
             self.assertIn("Report command exited with status 7.", displayed)
+        
+    def test_long_report_lines_indent_continuation_lines(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config_dir = Path(temporary)
+            report_text = (
+                "    What to do: Delete the line, or "
+                "restore/rename the file and re-enable it. "
+                "Report only; no dashboard row is created.\n"
+            )
 
+            completed = type(
+                "Completed",
+                (),
+                {
+                    "stdout": report_text,
+                    "returncode": 0,
+                },
+            )()
+
+            screen = FakeScreen([ord("q")], width=42)
+
+            with patch.dict(
+                os.environ,
+                {"PRINTER_CONFIG_DIR": str(config_dir)},
+            ):
+                with patch(
+                    "subprocess.run",
+                    return_value=completed,
+                ):
+                    curses_ui.JabberwockyTerminalUI().run_report(screen)
+
+            report_lines = [
+                text
+                for _y, x, text, _attr in screen.drawn_text
+                if x == 2
+            ]
+
+            self.assertTrue(
+                any(line.startswith("        ") for line in report_lines),
+                f"Expected indented continuation lines: {report_lines!r}",
+            )
+    
     def test_save_uses_unused_filename_and_preserves_existing_report(self):
         with tempfile.TemporaryDirectory() as temporary:
             config_dir = Path(temporary)
