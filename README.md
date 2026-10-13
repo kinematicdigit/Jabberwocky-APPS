@@ -1,68 +1,306 @@
-# Jabberwocky-APPS — Adaptive Smart Clutch (ASC) Suite
-# STATUS: ALPHA DEVELOPMENT PHASE — ACCELERATED CHARACTERIZATION PASS
+# Jabberwocky-APPS
 
-Jabberwocky-APPS is an advanced, low-overhead ecosystem extension suite providing real-time mechanical health diagnostics, un-cached telemetry parsing, and predictive software clutch overrides for high-performance toolhead drive systems.
+# 🚨 ALPHA SOFTWARE — TESTING ONLY 🚨
+
+# ⚠️ NOT FOR PRODUCTION USE ⚠️
+
+**Jabberwocky-APPS IS EXPERIMENTAL SOFTWARE UNDER ACTIVE DEVELOPMENT.**
+
+**THIS SOFTWARE IS PROVIDED STRICTLY FOR TESTING AND EVALUATION. IT IS NOT PRODUCTION-READY.**
+
+Do not rely on this software to protect your printer, prevent mechanical damage, or guarantee safe operation.
+
+Before testing:
+
+- Back up your Klipper configuration.
+- Make sure you can restore your printer if Klipper fails to start.
+- Review configuration changes before restarting Klipper.
+- Report unexpected behavior and test failures.
+- Do not assume that a successful installation means every feature works.
+
+**USE AT YOUR OWN RISK. TESTING ONLY.**
 
 ---
 
-## 🗺️ Repository Architecture Layout
+## 1. What Is Jabberwocky-APPS?
 
-To isolate execution code sets cleanly from configuration components, the repo tree is divided into explicit sub-directories:
-*   `software/` — Core Python extension modules, including your diagnostic instrument and manual probe arrays.
-*   `jabberwocky_dist/` — Centralized Klipper G-code include macros and card group meta assignments.
-*   `docs/` — INTERNAL DEPLOYMENT SCHEMATICS ONLY. Direct ledger indexes tracking software development targets.
+Jabberwocky-APPS is an experimental software project for Klipper-based 3D printers.
+
+The project focuses on configuration discovery, diagnostic reporting, and tools for managing printer configuration files and macros.
+
+The longer-term goal is to explore software-assisted observation of printer behavior and mechanical state.
+
+These capabilities are under development. Planned features must not be interpreted as completed or proven functionality.
+
+### Current Feature Overview
+
+| Feature | Description | Status |
+|---|---|---|
+| Setup interface | Interactive access to the setup workflow | Alpha testing |
+| Configuration discovery | Examines the printer configuration and its included files | Alpha testing |
+| Dashboard | Presents discovered configuration items for management | Alpha testing |
+| Diagnostic report | Displays findings to help investigate configuration problems | Alpha testing |
+| Extruder tools | Intended for future development | Not available |
+| Probe tools | Intended for future development | Not available |
+| Advanced monitoring and control | Longer-term experimental development | Not production-ready |
+
+Features may be incomplete or change between revisions. Verify results against your actual printer configuration.
 
 ---
 
-## 🛠️ SSH Terminal Installation & UI Execution
+## 2. Before You Install
 
-Get the repository onto your printer's host (Raspberry Pi etc.) at `~/Jabberwocky-APPS`, then run the installer.
+You will need:
+
+- A Klipper-based 3D printer.
+- SSH access to the printer host.
+- Access to your printer configuration directory.
+- A backup of your existing configuration.
+- Basic familiarity with restarting Klipper and recovering from configuration errors.
+
+The standard Klipper configuration directory is:
+
+`~/printer_data/config/`
+
+Your installation may use a different location. Verify your configuration path before proceeding.
+
+**Do not test this software on a printer that must remain operational.**
+
+---
+
+## 3. First Installation
+
+Connect to your printer host using SSH.
+
+Enter the following commands one at a time:
+
+### Step 1 — Download Jabberwocky-APPS
 
 ```bash
 cd ~
-git clone https://github.com/kinematicdigit/Jabberwocky-APPS.git   # first install
-# or update an existing copy:  cd ~/Jabberwocky-APPS && git pull
+git clone https://github.com/kinematicdigit/Jabberwocky-APPS.git
+```
 
+### Step 2 — Enter the application directory
+
+```bash
+cd ~/Jabberwocky-APPS
+```
+
+### Step 3 — Start the installer
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+Follow the instructions displayed by the installer.
+
+Do not restart Klipper until you have reviewed any configuration changes and confirmed that the configuration is valid.
+
+---
+
+## 4. Updating Jabberwocky-APPS
+
+**The recommended update procedure is a clean replacement of the application directory.**
+
+This avoids carrying old, untracked, or obsolete application files into the new checkout.
+
+### Important Before Updating
+
+The removal command below permanently deletes the existing `Jabberwocky-APPS` directory, including any local code changes.
+
+Make sure you do not need anything stored in that directory before continuing.
+
+Your Klipper configuration is stored separately and must not be deleted as part of an application update.
+
+### Step 1 — Remove the old application
+
+Connect to your printer host over SSH.
+
+Enter:
+
+```bash
+rm -rf ~/Jabberwocky-APPS
+```
+
+Wait for the command to finish.
+
+**Check that you have entered the path correctly before pressing Enter.**
+
+### Step 2 — Download the clean application
+
+Enter these commands one at a time:
+
+```bash
+cd ~
+git clone https://github.com/kinematicdigit/Jabberwocky-APPS.git
 cd ~/Jabberwocky-APPS
 chmod +x install.sh
 ./install.sh
 ```
 
-The installer assumes your Klipper config lives in `~/printer_data/config`.
+Follow the installer's instructions.
+
+### What This Update Does
+
+- Removes the old application checkout.
+- Downloads a fresh copy from the public repository.
+- Runs the installer from the new checkout.
+- Leaves the separate Klipper configuration directory untouched by the removal command.
+
+**Important:** The installer may subsequently modify managed configuration files. Review those changes before restarting Klipper.
+
+This is a clean application update, not a factory reset of your printer configuration.
 
 ---
 
-## 🎛️ Interactive Calibration & Bring-Up Routine
+## 5. Using the Interactive Interface
 
-In the setup menu, option 1 is already ticked. Move to **[ START ]** and press **Enter**. The installer:
+Use the arrow keys to navigate the menu and press Enter to select an option.
 
-1. saves a safety copy of `printer.cfg` (`printer_<date>.bak`);
-2. follows every `[include]` the way Klipper does and builds `jwt_macro_manager.conf` (the dashboard);
-3. treats anything you already switched off with `#` as disarmed (`[ 0 ]`) and rewrites it with the managed `#💤#` mask (originals are backed up to `jabberwocky_quarantine/`);
-4. writes a pre-flight report at the bottom of the dashboard: duplicate and overwritten macros, duplicate hardware sections, orphan files, backup files, and anything that stops Klipper.
+### Setup
 
-Press **Q** to exit, then run **`RESTART`** / **`FIRMWARE_RESTART`** in the web interface.
+Runs the configuration setup workflow.
 
-**Dashboard flags:** `[D!]` = active definition that overrides another, `[D?]` = overwritten/inactive copy, `[H!]`/`[H?]` the same for hardware sections (view only, never toggled). Files with no `[include]` pointing at them are flagged as orphans (no toggle; nothing is deleted).
+The workflow examines the printer configuration and its includes, discovers configuration items, and manages the project's dashboard and related files.
 
-**Applying toggles:** set an entry to `[ 0 ]` (off) or `[ 1 ]` (on) in `jwt_macro_manager.conf` and save. Then either
-*   run **`JABBERWOCKY_SYNC_NOW`** in the console, or
-*   just **`FIRMWARE_RESTART`**: a few seconds after Klipper comes back it syncs automatically and restarts once more if anything changed (you will see two restarts).
+Configuration changes can affect whether Klipper starts successfully. Review the results and retain a recoverable backup.
 
-Turning off a file only comments out its `[include]`; the file stays on disk. Turning off a macro wraps it in `#💤#` markers; the definition is kept and restored when you switch it back on. SSH fallback: `python3 ~/Jabberwocky-APPS/scrubber/jws_core.py --sync`, then `FIRMWARE_RESTART`.
+### Extruder Tools
 
-### If Klipper will not start
+Reserved for future development.
 
-Klipper cannot run the sync itself in that state. Use the report instead:
+### Probe Tools
 
-1. Open `jwt_macro_manager.conf` (Mainsail config list) and read the **PRE-FLIGHT REPORT** at the bottom, or run `python3 ~/Jabberwocky-APPS/scrubber/jws_core.py --report` over SSH. It is read-only.
-2. Typical blockers: an `[include]` pointing at a missing file (fix the name or comment the line), or a duplicate section. Fix the line named in the report, then restart.
-3. Your original `printer.cfg` is in `printer_<date>.bak` and masked lines are backed up in `jabberwocky_quarantine/`.
-4. Optional cleanup: set the sweep action to `[ 1 ]` and re-run `./install.sh`. It moves (never deletes) backups and orphan files into `jabberwocky_quarantine/`.
+Reserved for future development.
 
-1. **Clear the Drive Track:** Heat your hotend nozzle to an intermediate standby threshold of **150°C** to soften any lingering polymer residue. Open your toolhead Guidler carriage latch completely and extract all filament from the drive track so the gears spin inside free air.
-2. **Execute the Reference Test Loop:** Click the **`ASC_TEST_LOAD_RAW`** macro button on your dashboard. The motor will execute a safe, compact 50mm motion sweep, spacing out 5 crisp telemetry log updates every 2 seconds.
-3. **Set the Parallel Screw Wall:** If your gear mesh is binding or unaligned, look at the values. Slowly adjust your toolhead anti-squish limit stop screw by hand until your console logs settle on a steady, nominal **`PWM_SCALE_SUM = 27`**, then click **`ASC_SAVE_BUILD`** on your dashboard to lock those calibrated parameters straight into your update-safe user profile map file!
+### Report
+
+Opens the diagnostic report interface.
+
+The report is intended to help you investigate configuration findings without applying dashboard changes.
+
+To test the Report feature:
+
+1. Launch the application.
+2. Navigate to **Report**.
+3. Press Enter.
+4. Review the displayed findings.
+5. Use the available navigation keys to inspect the report.
+6. Press Q to return to the menu.
+7. Exit without running the setup workflow.
+
+**You do not need to run Setup merely to test Report.**
+
+If the report interface offers a save option, follow its on-screen instructions to save a copy for investigation.
+
+### START
+
+Starts the setup workflow.
+
+Do not select START when your only goal is to test the Report feature.
+
+### Exit
+
+Press Q to leave the interface.
 
 ---
-*© 2026 – developed and maintained by kinematicdigit and the Jabberwocky Engineering Team.*
+
+## 6. Understanding Configuration Findings
+
+Jabberwocky-APPS is intended to help users inspect their configuration structure.
+
+Depending on the findings displayed by the current version, the report may identify issues involving included files, duplicate definitions, or files that appear disconnected from the active configuration tree.
+
+These findings require human review.
+
+### Duplicate Definitions
+
+A duplicate definition may indicate that multiple configuration files define the same item.
+
+Do not delete a definition solely because it is flagged. Determine which definition is intended to be active and whether the duplicate is deliberate.
+
+### Unreferenced or Orphaned Files
+
+A file that is not reached through the recognized include tree is not necessarily safe to delete.
+
+It may be retained for future use or loaded through a mechanism the application does not recognize.
+
+Review its contents and purpose before taking action.
+
+### Configuration Errors
+
+Use the report to locate and investigate potential problems.
+
+The report is a diagnostic aid, not an automatic repair mechanism. A clean report does not guarantee that every aspect of the printer configuration is correct.
+
+---
+
+## 7. If Klipper Will Not Start
+
+If Klipper fails to start after testing:
+
+1. Stop making additional configuration changes.
+2. Review the Klipper error message.
+3. Inspect the affected configuration file and line reference.
+4. Check the Jabberwocky-APPS report, if available.
+5. Compare the affected files with your backup.
+6. Restore or correct the affected configuration.
+7. Verify the configuration before restarting Klipper.
+
+Do not repeatedly run the installer or synchronization commands in an attempt to fix an unknown problem.
+
+Keep your original configuration available until testing is complete.
+
+---
+
+## 8. Reporting Problems
+
+Useful bug reports include:
+
+- The application version or Git commit being tested.
+- The operation you were performing.
+- The exact command you entered, if applicable.
+- The complete error message.
+- The relevant diagnostic report output.
+- Whether Klipper was running at the time.
+- Whether the problem can be reproduced.
+
+Remove passwords, tokens, API keys, and other private information before sharing logs or configuration files.
+
+When possible, describe what actually happened separately from what you think caused it.
+
+This helps distinguish observed behavior from assumptions.
+
+---
+
+## 9. Development Status
+
+Jabberwocky-APPS is under active development.
+
+Configuration handling, report content, interface behavior, and installation procedures may change between revisions.
+
+Some features may be incomplete, unavailable, or subject to substantial redesign.
+
+Successful installation does not establish that every feature is reliable.
+
+**This project is intended for development, evaluation, and testing only.**
+
+Do not use it as a substitute for printer maintenance, configuration backups, or established safety procedures.
+
+---
+
+## 10. Project Repository
+
+Source code and project updates:
+
+https://github.com/kinematicdigit/Jabberwocky-APPS
+
+Please report reproducible issues and provide the information needed to investigate them.
+
+**ALPHA SOFTWARE. TESTING ONLY. NOT FOR PRODUCTION USE.**
+
+---
+
+# EOF
