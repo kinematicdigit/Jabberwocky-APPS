@@ -159,17 +159,28 @@ class JabberwockyTerminalUI:
 
         lines = []
         width = max(20, stdscr.getmaxyx()[1] - 4)
+
         for raw_line in report_text.splitlines() or ["(Empty report.)"]:
-            wrapped = textwrap.wrap(
-                raw_line,
+            if not raw_line.strip():
+                lines.append("")
+                continue
+
+            # Preserve the original indentation and indent wrapped lines.
+            indent = raw_line[:len(raw_line) - len(raw_line.lstrip())]
+            content = raw_line[len(indent):]
+
+            wrapper = textwrap.TextWrapper(
                 width=width,
+                initial_indent=indent,
+                subsequent_indent=indent + "    ",
                 replace_whitespace=False,
-                drop_whitespace=False,
+                drop_whitespace=True,
                 break_long_words=True,
                 break_on_hyphens=False,
             )
-            lines.extend(wrapped or [""])
 
+            lines.extend(wrapper.wrap(content) or [indent])
+            
         top = 0
         while True:
             h, w = stdscr.getmaxyx()
